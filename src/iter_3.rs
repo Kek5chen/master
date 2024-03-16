@@ -18,7 +18,7 @@ enum Coin {
 const ALL_COINS: [Coin; 8] = [ Coin::OneCent, Coin::TwoCent, Coin::FiveCent, Coin::TenCent, Coin::TwentyCent, Coin::FiftyCent, Coin::OneEuro, Coin::TwoEuro ];
 
 fn count_coins(coins: &[Coin]) -> u32 {
-    coins.into_par_iter().map(|&c| c as u32).sum()
+    coins.iter().map(|&c| c as u32).sum()
 }
 
 fn main() {

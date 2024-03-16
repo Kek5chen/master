@@ -3,6 +3,24 @@ name = "rustfun"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "coins_v1"
+path = "src/iter_1.rs"
+
+[[bin]]
+name = "coins_v2"
+path = "src/iter_2.rs"
+
+[[bin]]
+name = "coins_v3"
+path = "src/iter_3.rs"
+
+[[bin]]
+name = "coins_v4"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rand = { version = "0.8.5", features = ["small_rng"] }
+rayon = "1.9.0"

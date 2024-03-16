@@ -1,6 +1,5 @@
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
-use rayon::prelude::*;
 
 // coin sorting
 #[derive(Copy, Clone)]
@@ -18,17 +17,15 @@ enum Coin {
 const ALL_COINS: [Coin; 8] = [ Coin::OneCent, Coin::TwoCent, Coin::FiveCent, Coin::TenCent, Coin::TwentyCent, Coin::FiftyCent, Coin::OneEuro, Coin::TwoEuro ];
 
 fn count_coins(coins: &[Coin]) -> u32 {
-    coins.into_par_iter().map(|&c| c as u32).sum()
+    coins.iter().map(|&c| c as u32).sum()
 }
 
 fn main() {
-    let coins: Vec<Coin> = (0..1_000_000)
-        .into_par_iter()
-        .map(|_| {
-             let chosen_coin = SmallRng::from_entropy().gen_range(0..ALL_COINS.len());
-             ALL_COINS[chosen_coin]
-             })
-        .collect();
+    let mut coins: Vec<Coin> = Vec::with_capacity(1_000_000);
+    for _ in 0..1_000_000 {
+        let chosen_coin = SmallRng::from_entropy().gen_range(0..(ALL_COINS.len()));
+        coins.push(ALL_COINS[chosen_coin]);
+    }
     
     let value = count_coins(&coins);
 
