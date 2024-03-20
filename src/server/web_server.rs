@@ -28,7 +28,6 @@ impl WebServer {
     pub fn serve_http(&mut self) -> io::Result<()> {
         self.started_http = true;
         self.server = Some(TcpListener::bind("127.0.0.1:8080")?);
-        self.server.as_ref().unwrap().set_nonblocking(true);
 
         self.accept_clients();
 
@@ -40,9 +39,8 @@ impl WebServer {
         loop {
             for client in server.incoming() {
                 match client {
-                    Ok(mut client) => { self.handle_client(&mut client).expect("Couldn't handle client"); },
-                    Err(e) if e.kind() == ErrorKind::WouldBlock => continue,
-                    Err(e) => { eprintln!("Connection failed: {e}"); },
+                    Ok(mut client) => self.handle_client(&mut client).expect("Couldn't handle client"),
+                    Err(e) => eprintln!("Connection failed: {e}"),
                 };
             }
         }
