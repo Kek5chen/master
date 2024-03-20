@@ -4,6 +4,8 @@ use std::io::ErrorKind::WouldBlock;
 
 use crate::http::HTTPMessage;
 
+const MAX_READ_RETRIES: u32 = 1000;
+
 #[allow(unused)]
 pub struct WebServer {
     started_http: bool,
@@ -66,12 +68,18 @@ impl WebServer {
     fn read_request(&self, client: &mut TcpStream) -> io::Result<HTTPMessage> {
         let mut buffer = [0; 1024];
         let mut content = Vec::new();
+        let mut read_retries = 0;
 
         loop {
             match client.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read_num) => content.extend_from_slice(&buffer[..read_num]),
                 Err(e) if e.kind() == WouldBlock => {
+                    read_retries += 1;
+                    if read_retries >= MAX_READ_RETRIES {
+                        println!("Maximum read tries were reached.. cancelling..");
+                        break;
+                    }
                     if !content.is_empty() {
                         break;
                     }
