@@ -29,7 +29,6 @@ impl HTTPMessage {
     }
 
     pub fn parse(data: &str) -> Result<Self, String> {
-        println!("{data}");
         let path = data.split_whitespace().next().unwrap_or("/").to_string();
         Ok(HTTPMessage {
             header: HashMap::new(),
