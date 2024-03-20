@@ -60,7 +60,7 @@ impl WebServer {
             Err(e) => self.respond_error(client, &e)?
         };
 
-
+        println!("Finishing client {}", client.peer_addr()?);
         client.flush()?;
         client.shutdown(Shutdown::Both)
     }
