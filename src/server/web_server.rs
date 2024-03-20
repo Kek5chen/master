@@ -1,5 +1,6 @@
 use std::net::{TcpListener, TcpStream, Shutdown};
-use std::io::{self, Read, Write, ErrorKind};
+use std::io::{self, Error, ErrorKind, Read, Write};
+use std::time::Duration;
 
 use crate::server::HTTPMessage;
 
@@ -49,10 +50,15 @@ impl WebServer {
     }
 
     fn handle_client(&self, client: &mut TcpStream) -> io::Result<()> {
+        client.set_read_timeout(Some(Duration::from_secs(10)));
         println!("Accepted client {}", client.peer_addr()?);
-        let request = self.read_request(client)?;
-        println!("Client requested path {}", request.path);
-        self.respond(client, &request)?;
+
+        match self.read_request(client) {
+            Ok(msg) => self.respond(client, &msg)?,
+            Err(e) => self.respond_error(client, &e)?
+        };
+
+
         client.flush()?;
         client.shutdown(Shutdown::Both)
     }
@@ -72,26 +78,31 @@ impl WebServer {
     }
 
     fn read_request_header(&self, client: &mut TcpStream) -> io::Result<HTTPMessage> {
-        let mut buffer = [0; 1024]; // Example size, adjust as necessary
+        let mut buffer = [0; 1024];
         let mut content = Vec::new();
-        let mut read_len = client.read(&mut buffer)?;
+        // TODO: Will crash if buffer size was overrun
+        let read_num = client.read(&mut buffer)?;
 
-        // Basic loop to read headers; consider improving for robustness
-        while read_len > 0 && !content.ends_with(b"\r\n\r\n") {
-            content.extend_from_slice(&buffer[..read_len]);
-            read_len = match client.read(&mut buffer) {
-                Ok(size) => size,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(e) => return Err(e),
-            };
+        if !buffer[..read_num].ends_with(b"\r\n\r\n") {
+            return Err(Error::new(ErrorKind::InvalidData, "The request header was malformed."));
         }
 
         let headers = String::from_utf8(content).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8 sequence"))?;
-        Ok(HTTPMessage::from(&headers))
+        let message = HTTPMessage::from(&headers);
+        println!("Client requested path {}", &message.path);
+        Ok(message)
     }
 
     fn respond(&self, client: &mut TcpStream, request: &HTTPMessage) -> io::Result<()> {
         let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>literally mowserver</h1>";
+        client.write_all(response.as_bytes())
+    }
+
+    fn respond_error(&self, client: &mut TcpStream, error: &Error) -> io::Result<()> {
+        let mut response = "HTTP/1.1 500 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>oh nonono... Erororer!!\n\n".to_string();
+
+        response += error.to_string().as_str();
+        response += "</h1>";
         client.write_all(response.as_bytes())
     }
 }
