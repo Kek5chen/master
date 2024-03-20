@@ -28,15 +28,15 @@ impl HTTPMessage {
         }
     }
 
-    pub fn from(data: &str) -> Self {
+    pub fn parse(data: &str) -> Result<Self, String> {
         println!("{data}");
         let path = data.split_whitespace().next().unwrap_or("/").to_string();
-        HTTPMessage {
+        Ok(HTTPMessage {
             header: HashMap::new(),
             data: String::new(),
             path,
             request_type: None,
-        }
+        })
     }
 
     pub fn get(&self, field_name: &str) -> Option<&String> {
