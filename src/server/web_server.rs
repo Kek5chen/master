@@ -1,8 +1,8 @@
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::io::{self, Error, ErrorKind, Read, Write};
-use std::time::Duration;
+use std::io::ErrorKind::WouldBlock;
 
-use crate::server::HTTPMessage;
+use crate::http::HTTPMessage;
 
 #[allow(unused)]
 pub struct WebServer {
@@ -50,7 +50,7 @@ impl WebServer {
     }
 
     fn handle_client(&self, client: &mut TcpStream) -> io::Result<()> {
-        client.set_read_timeout(Some(Duration::from_secs(10)));
+        client.set_nonblocking(true)?;
         println!("Accepted client {}", client.peer_addr()?);
 
         match self.read_request(client) {
@@ -64,36 +64,38 @@ impl WebServer {
     }
 
     fn read_request(&self, client: &mut TcpStream) -> io::Result<HTTPMessage> {
-        let mut message = self.read_request_header(client)?;
-        let content_length = message
-            .get("Content-Length")
-            .and_then(|c| c.parse::<usize>().ok())
-            .unwrap_or(0);
-        if content_length > 0 {
-            let mut body = vec![0u8; content_length];
-            client.read_exact(&mut body);
-            message.data = String::from_utf8(body).unwrap_or_else(|_| String::new());
-        }
-        Ok(message)
-    }
-
-    fn read_request_header(&self, client: &mut TcpStream) -> io::Result<HTTPMessage> {
         let mut buffer = [0; 1024];
         let mut content = Vec::new();
-        // TODO: Will crash if buffer size was overrun
-        let read_num = client.read(&mut buffer)?;
 
-        if !buffer[..read_num].ends_with(b"\r\n\r\n") {
-            return Err(Error::new(ErrorKind::InvalidData, "The request header was malformed."));
+        loop {
+            match client.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read_num) => content.extend_from_slice(&buffer[..read_num]),
+                Err(e) if e.kind() == WouldBlock => {
+                    if !content.is_empty() {
+                        break;
+                    }
+                },
+                Err(e) => return Err(e),
+            };
         }
 
-        let headers = String::from_utf8(content).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8 sequence"))?;
-        let message = HTTPMessage::from(&headers);
-        println!("Client requested path {}", &message.path);
-        Ok(message)
+        if content.is_empty() {
+            return Err(Error::new(ErrorKind::InvalidData, "The request was empty"));
+        }
+
+        let message = String::from_utf8(content)
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid UTF-8 sequence"))?;
+        let message = HTTPMessage::parse(&message);
+
+        match message {
+            Ok(message) => Ok(message),
+            Err(e) => Err(Error::new(ErrorKind::InvalidData, "The request was invalid."))
+        }
     }
 
     fn respond(&self, client: &mut TcpStream, request: &HTTPMessage) -> io::Result<()> {
+        println!("Client requested path {}", &request.path);
         let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>literally mowserver</h1>";
         client.write_all(response.as_bytes())
     }
