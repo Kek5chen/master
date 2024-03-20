@@ -32,6 +32,10 @@ impl HTTPMessage {
         })
     }
 
+    pub fn make_response(&self) -> String {
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>literally mowserver</h1>".to_string()
+    }
+
     pub fn get(&self, field_name: &str) -> Option<&String> {
         self.header.get(field_name)
     }

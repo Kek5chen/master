@@ -94,7 +94,7 @@ impl WebServer {
 
         let message = String::from_utf8(content)
             .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid UTF-8 sequence"))?;
-        let message = HTTPMessage::parse(&message);
+        let message = HTTPMessage::parse_request(&message);
 
         match message {
             Ok(message) => Ok(message),
@@ -103,8 +103,8 @@ impl WebServer {
     }
 
     fn respond(&self, client: &mut TcpStream, request: &HTTPMessage) -> io::Result<()> {
-        println!("Client requested path {}", &request.path);
-        let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>literally mowserver</h1>";
+        println!("Client requested {} on path {}", &request.request_type, &request.path);
+        let response = HTTPMessage::new().make_response();
         client.write_all(response.as_bytes())
     }
 
