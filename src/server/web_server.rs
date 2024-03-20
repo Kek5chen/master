@@ -35,7 +35,9 @@ impl WebServer {
     }
 
     fn accept_clients(&self) -> io::Result<()> {
-        let server = self.server.as_ref().expect("accept_clients was called without server being set previously");
+        let server = self.server
+            .as_ref()
+            .expect("accept_clients was called without server being set previously");
         loop {
             for client in server.incoming() {
                 match client {
