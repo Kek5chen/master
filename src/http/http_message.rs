@@ -1,20 +1,11 @@
 use std::{collections::HashMap};
 
 #[allow(dead_code)]
-pub enum HTTPRequestType {
-    Get,
-    Post,
-    Put,
-    Delete,
-    Update
-}
-
-#[allow(dead_code)]
 pub struct HTTPMessage {
     header: HashMap<String, String>,
     pub data: String,
     pub path: String,
-    pub request_type: Option<HTTPRequestType>,
+    pub request_type: String,
 }
 
 #[allow(dead_code)]
@@ -24,17 +15,20 @@ impl HTTPMessage {
             header: HashMap::new(),
             data: String::new(),
             path: String::from("/"),
-            request_type: None
+            request_type: String::new(),
         }
     }
 
-    pub fn parse(data: &str) -> Result<Self, String> {
-        let path = data.split_whitespace().next().unwrap_or("/").to_string();
+    pub fn parse_request(data: &str) -> Result<Self, String> {
+        let mut words = data.split_whitespace();
+        let request_type = words.next().unwrap_or("").to_string();
+        let path = words.next().unwrap_or("/").to_string();
+
         Ok(HTTPMessage {
             header: HashMap::new(),
             data: String::new(),
             path,
-            request_type: None,
+            request_type,
         })
     }
 
