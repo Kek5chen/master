@@ -19,6 +19,15 @@ pub struct HTTPMessage {
 
 #[allow(dead_code)]
 impl HTTPMessage {
+    pub fn new() -> Self {
+        HTTPMessage {
+            header: HashMap::new(),
+            data: String::new(),
+            path: String::from("/"),
+            request_type: None
+        }
+    }
+
     pub fn from(data: &str) -> Self {
         println!("{data}");
         let path = data.split_whitespace().next().unwrap_or("/").to_string();
