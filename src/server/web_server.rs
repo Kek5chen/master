@@ -53,14 +53,12 @@ impl WebServer {
 
     fn handle_client(&self, client: &mut TcpStream) -> io::Result<()> {
         client.set_nonblocking(true)?;
-        println!("Accepted client {}", client.peer_addr()?);
 
         match self.read_request(client) {
             Ok(msg) => self.respond(client, &msg)?,
             Err(e) => self.respond_error(client, &e)?
         };
 
-        println!("Finishing client {}", client.peer_addr()?);
         client.flush()?;
         client.shutdown(Shutdown::Both)
     }
@@ -103,7 +101,11 @@ impl WebServer {
     }
 
     fn respond(&self, client: &mut TcpStream, request: &HTTPMessage) -> io::Result<()> {
-        println!("Client requested {} on path {}", &request.request_type, &request.path);
+        println!("[{} on {}] {} for path {}",
+                 &client.peer_addr()?,
+                 request.get("User-Agent").unwrap_or(&String::from("No User Agent")),
+                 &request.request_type,
+                 &request.path);
         let response = HTTPMessage::new().make_response();
         client.write_all(response.as_bytes())
     }
