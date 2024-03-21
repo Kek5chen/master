@@ -7,7 +7,7 @@ use crate::http::HTTPMessage;
 use crate::html::{RESPONSE_404, RESPONSE_INVALID};
 
 const VERSION: &str = "0.1.0";
-const MAX_READ_RETRIES: u32 = 1000;
+const MAX_READ_RETRIES: u32 = 5000;
 
 #[allow(unused)]
 pub struct WebServer {
