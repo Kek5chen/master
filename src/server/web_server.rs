@@ -106,8 +106,9 @@ impl WebServer {
                  request.get("User-Agent").unwrap_or(&String::from("No User Agent")),
                  &request.request_type,
                  &request.path);
-        let response = HTTPMessage::new().make_response();
-        client.write_all(response.as_bytes())
+        let mut response = HTTPMessage::new();
+        response.body = "<h1>literally mowserver</h1>".to_string();
+        client.write_all(response.make_response().as_bytes())
     }
 
     fn respond_error(&self, client: &mut TcpStream, error: &Error) -> io::Result<()> {

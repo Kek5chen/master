@@ -6,7 +6,7 @@ pub struct HTTPMessage {
     pub path: String,
     pub protocol: String,
     pub header: HashMap<String, String>,
-    pub data: String,
+    pub body: String,
 }
 
 #[allow(dead_code)]
@@ -17,7 +17,7 @@ impl HTTPMessage {
             path: String::from("/"),
             protocol: String::from(""),
             header: HashMap::new(),
-            data: String::new(),
+            body: String::new(),
         }
     }
 
@@ -34,7 +34,7 @@ impl HTTPMessage {
             path,
             protocol,
             header: Self::parse_header(header),
-            data: body.to_string(),
+            body: body.to_string(),
         })
     }
 
