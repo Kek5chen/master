@@ -2,12 +2,12 @@ use std::fs::File;
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::io::{self, Error, ErrorKind, Read, Write};
 use std::io::ErrorKind::WouldBlock;
+use std::time::{Duration, SystemTime};
 
 use crate::http::HTTPMessage;
 use crate::html::{RESPONSE_404, RESPONSE_INVALID};
 
 const VERSION: &str = "0.1.0";
-const MAX_READ_RETRIES: u32 = 5000;
 
 #[allow(unused)]
 pub struct WebServer {
@@ -24,6 +24,8 @@ impl Default for WebServer {
 
 #[allow(unused)]
 impl WebServer {
+    const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
     pub fn new() -> Self {
         WebServer {
             started_http: false,
@@ -69,16 +71,15 @@ impl WebServer {
     fn read_request(&self, client: &mut TcpStream) -> io::Result<HTTPMessage> {
         let mut buffer = [0; 1024];
         let mut content = Vec::new();
-        let mut read_retries = 0;
+        let mut started_reading = SystemTime::now();
 
         loop {
             match client.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read_num) => content.extend_from_slice(&buffer[..read_num]),
                 Err(e) if e.kind() == WouldBlock => {
-                    read_retries += 1;
-                    if read_retries >= MAX_READ_RETRIES {
-                        println!("Maximum read tries were reached.. cancelling..");
+                    if started_reading.elapsed().unwrap() > Self::READ_TIMEOUT {
+                        println!("Read timed out after {} seconds.. cancelling..", Self::READ_TIMEOUT.as_secs());
                         break;
                     }
                     if !content.is_empty() {
