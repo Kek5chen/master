@@ -1,9 +1,13 @@
+use std::cmp::min;
+use std::fs::File;
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::io::{self, Error, ErrorKind, Read, Write};
 use std::io::ErrorKind::WouldBlock;
 
 use crate::http::HTTPMessage;
+use crate::html::{RESPONSE_404, RESPONSE_INVALID};
 
+const VERSION: &str = "0.1.0";
 const MAX_READ_RETRIES: u32 = 1000;
 
 #[allow(unused)]
@@ -56,7 +60,7 @@ impl WebServer {
 
         match self.read_request(client) {
             Ok(msg) => self.respond(client, &msg)?,
-            Err(e) => self.respond_error(client, &e)?
+            Err(e) => self.respond_invalid(client, &e)?
         };
 
         client.flush()?;
@@ -106,17 +110,85 @@ impl WebServer {
                  request.get("User-Agent").unwrap_or(&String::from("No User Agent")),
                  &request.request_type,
                  &request.path);
+
+        // TODO: sanitize path
+        let mut file = match File::open(&request.path) {
+            Ok(file) => file,
+            Err(e) => return self.respond_error(client, request, &e),
+        };
+
         let mut response = HTTPMessage::new();
-        response.body = "<h1>literally mowserver</h1>".to_string();
+
+        let mut content: Vec<u8> = Vec::new();
+        file.read_to_end(&mut content);
+        response.body = String::from_utf8(content)?;
+
         client.write_all(response.make_response().as_bytes())
     }
 
-    fn respond_error(&self, client: &mut TcpStream, error: &Error) -> io::Result<()> {
-        let mut response = "HTTP/1.1 500 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>oh nonono... Erororer!!\n\n".to_string();
+    fn respond_invalid(&self, client: &mut TcpStream, error: &Error) -> io::Result<()> {
+        println!("[{}] Invalid request", &client.peer_addr()?);
+        let mut response = HTTPMessage::new();
 
-        response += error.to_string().as_str();
-        response += "</h1>";
-        client.write_all(response.as_bytes())
+        response.body = Self::replace_placeholders(RESPONSE_INVALID, None);
+
+        client.write_all(response.make_response().as_bytes())
+    }
+
+    fn respond_error(&self, client: &mut TcpStream, request: &HTTPMessage, error: &Error)
+        -> io::Result<()> {
+        let mut response = HTTPMessage::new();
+
+        response.body = Self::replace_placeholders(RESPONSE_404, Some(request));
+
+        client.write_all(response.make_response().as_bytes())
+    }
+
+    fn sanitize_path(path: &str) {
+        let decoded = Self::percent_decode(path);
+    }
+
+    fn percent_decode(text: &str) -> String {
+        let mut chars: Vec<char> = text.chars().collect();
+        let mut next_percent = chars.iter().enumerate().find(|&(_, &c)| c == '%');
+
+        while let Some((index, _)) = next_percent {
+            let start = min(index + 1, chars.len());
+            let end = min(index + 1, chars.len());
+
+            let mut new_chars = chars.drain(start..end).collect();
+            if end - start == 2 {
+                if let Ok(value) = u8::from_str_radix(&chars[start..end].iter().collect::<String>(), 16) {
+                    if let Some(c) = std::char::from_u32(value as u32) {
+                        chars.insert(index, c);
+                    }
+                }
+            }
+
+            next_percent = chars.iter().enumerate().find(|&(_, &c)| c == '%');
+        }
+
+        chars.iter().collect()
+    }
+
+    fn replace_placeholders(text: &str, request: Option<&HTTPMessage>) -> String {
+        let mut new_text = text.replace("#%VERSION%#", VERSION);
+        let request = match request {
+            Some(request) => request,
+            None => return new_text,
+        };
+
+        new_text.replace("#%PATH%#", &request.path)
+    }
+}
+
+mod tests {
+    use super::WebServer;
+
+    #[test]
+    fn test_percent_decode() {
+        assert_eq!(WebServer::percent_decode("%20%20%20"), "   ");
+        assert_eq!(WebServer::percent_decode("%FF"), "");
     }
 }
 
