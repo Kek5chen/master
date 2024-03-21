@@ -1,5 +1,6 @@
 mod server;
 mod http;
+mod html;
 
 use std::io;
 use server::WebServer;
