@@ -1,4 +1,3 @@
-use std::cmp::min;
 use std::fs::File;
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::io::{self, Error, ErrorKind, Read, Write};
@@ -121,7 +120,8 @@ impl WebServer {
 
         let mut content: Vec<u8> = Vec::new();
         file.read_to_end(&mut content);
-        response.body = String::from_utf8(content)?;
+
+        response.body = String::from_utf8(content).unwrap_or_default();
 
         client.write_all(response.make_response().as_bytes())
     }
@@ -144,33 +144,6 @@ impl WebServer {
         client.write_all(response.make_response().as_bytes())
     }
 
-    fn sanitize_path(path: &str) {
-        let decoded = Self::percent_decode(path);
-    }
-
-    fn percent_decode(text: &str) -> String {
-        let mut chars: Vec<char> = text.chars().collect();
-        let mut next_percent = chars.iter().enumerate().find(|&(_, &c)| c == '%');
-
-        while let Some((index, _)) = next_percent {
-            let start = min(index + 1, chars.len());
-            let end = min(index + 1, chars.len());
-
-            let mut new_chars = chars.drain(start..end).collect();
-            if end - start == 2 {
-                if let Ok(value) = u8::from_str_radix(&chars[start..end].iter().collect::<String>(), 16) {
-                    if let Some(c) = std::char::from_u32(value as u32) {
-                        chars.insert(index, c);
-                    }
-                }
-            }
-
-            next_percent = chars.iter().enumerate().find(|&(_, &c)| c == '%');
-        }
-
-        chars.iter().collect()
-    }
-
     fn replace_placeholders(text: &str, request: Option<&HTTPMessage>) -> String {
         let mut new_text = text.replace("#%VERSION%#", VERSION);
         let request = match request {
@@ -181,14 +154,3 @@ impl WebServer {
         new_text.replace("#%PATH%#", &request.path)
     }
 }
-
-mod tests {
-    use super::WebServer;
-
-    #[test]
-    fn test_percent_decode() {
-        assert_eq!(WebServer::percent_decode("%20%20%20"), "   ");
-        assert_eq!(WebServer::percent_decode("%FF"), "");
-    }
-}
-
