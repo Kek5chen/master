@@ -2,6 +2,7 @@ use std::{collections::HashMap};
 
 #[allow(dead_code)]
 pub struct HTTPMessage {
+    pub status_code: u16,
     pub request_type: String,
     pub path: String,
     pub protocol: String,
@@ -13,6 +14,7 @@ pub struct HTTPMessage {
 impl HTTPMessage {
     pub fn new() -> Self {
         HTTPMessage {
+            status_code: 200,
             request_type: String::new(),
             path: String::from("/"),
             protocol: String::from(""),
@@ -30,6 +32,7 @@ impl HTTPMessage {
         let protocol = words.next().unwrap_or("HTTP/1.1").to_string();
 
         Ok(HTTPMessage {
+            status_code: if !info.is_empty() && !request_type.is_empty() { 200 } else { 500 },
             request_type,
             path,
             protocol,
@@ -70,6 +73,14 @@ impl HTTPMessage {
 
     pub fn make_response(&self) -> String {
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>literally mowserver</h1>".to_string()
+    }
+
+    fn get_status_code_text<'a>(code: u16) -> &'a str {
+        match code {
+            200 => "OK",
+            404 => "Not Found",
+            500 => "Internal Server Error",
+            _ => "I don't know that code"
     }
 
     pub fn get(&self, field_name: &str) -> Option<&String> {
