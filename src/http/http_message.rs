@@ -71,8 +71,25 @@ impl HTTPMessage {
         header_map
     }
 
-    pub fn make_response(&self) -> String {
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<h1>literally mowserver</h1>".to_string()
+    pub fn make_response(&mut self) -> String {
+        let status_text = Self::get_status_code_text(self.status_code);
+        let header_text = self.get_header_as_text();
+
+        self.add("Content-Length", &self.body.len().to_string());
+        if !self.header.contains_key("Content-Type") {
+            self.add("Content-Type", "text/html");
+        }
+        if self.protocol.is_empty() {
+            self.protocol = String::from("HTTP/1.1");
+        }
+
+        String::from(
+            format!("{} {} {}\n{}\r\n\r\n{}",
+                &self.protocol,
+                &self.status_code,
+                status_text,
+                header_text,
+                self.body))
     }
 
     fn get_status_code_text<'a>(code: u16) -> &'a str {
