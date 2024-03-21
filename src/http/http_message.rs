@@ -17,7 +17,7 @@ impl HTTPMessage {
             status_code: 200,
             request_type: String::new(),
             path: String::from("/"),
-            protocol: String::from(""),
+            protocol: String::from("HTTP/1.1"),
             header: HashMap::new(),
             body: String::new(),
         }
@@ -81,6 +81,17 @@ impl HTTPMessage {
             404 => "Not Found",
             500 => "Internal Server Error",
             _ => "I don't know that code"
+        }
+    }
+
+    fn get_header_as_text(&self) -> String {
+        let mut header_text = String::new();
+
+        for (key, value) in &self.header {
+            header_text.push_str(&format!("{}: {}\n", key, value));
+        }
+
+        header_text
     }
 
     pub fn get(&self, field_name: &str) -> Option<&String> {
