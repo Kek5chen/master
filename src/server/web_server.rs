@@ -131,6 +131,7 @@ impl WebServer {
         let mut response = HTTPMessage::new();
 
         response.body = Self::replace_placeholders(RESPONSE_INVALID, None);
+        response.status_code = 400;
 
         client.write_all(response.make_response().as_bytes())
     }
@@ -140,6 +141,11 @@ impl WebServer {
         let mut response = HTTPMessage::new();
 
         response.body = Self::replace_placeholders(RESPONSE_404, Some(request));
+        response.status_code = match error.kind() {
+            ErrorKind::NotFound => 404,
+            ErrorKind::PermissionDenied => 403,
+            _ => 500,
+        };
 
         client.write_all(response.make_response().as_bytes())
     }
