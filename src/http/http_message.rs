@@ -99,7 +99,7 @@ impl HTTPMessage {
         let status_text = Self::get_status_code_text(self.status_code);
         let header_text = self.get_header_as_text();
 
-        let mut response = format!("{} {} {}\n{}\r\n\r\n{}",
+        let mut response = format!("{} {} {}\n{}\r\n{}\r\n",
             &self.protocol,
             &self.status_code,
             status_text,
