@@ -5,7 +5,7 @@ use std::io::ErrorKind::WouldBlock;
 use std::time::{Duration, SystemTime};
 
 use crate::http::HTTPMessage;
-use crate::html::{RESPONSE_404, RESPONSE_INVALID};
+use crate::html::{RESPONSE_403, RESPONSE_404, RESPONSE_INVALID, RESPONSE_SHUTDOWN};
 
 const VERSION: &str = "0.1.0";
 
@@ -48,21 +48,39 @@ impl WebServer {
         let server = self.server
             .as_ref()
             .expect("accept_clients was called without server being set previously");
-        loop {
-            for client in server.incoming() {
-                match client {
-                    Ok(mut client) => self.handle_client(&mut client).expect("Couldn't handle client"),
-                    Err(e) => eprintln!("Connection failed: {e}"),
-                };
+        for client in server.incoming() {
+            match client {
+                Ok(mut client) => {
+                    match self.handle_client(&mut client) {
+                        Ok(_) => (),
+                        Err(e) if e.kind() == ErrorKind::Other => {
+                            println!("{e}");
+                            return Err(e);
+                        },
+                        Err(e) => {
+                            eprintln!("Error handling client: {e}");
+                            continue;
+                        }
+                    }
+                },
+                Err(e) => eprintln!("Connection failed: {e}"),
             }
         }
+        Ok(())
     }
 
     fn handle_client(&self, client: &mut TcpStream) -> io::Result<()> {
         client.set_nonblocking(true)?;
 
         match self.read_request(client) {
-            Ok(msg) => self.respond(client, &msg)?,
+            Ok(msg) => {
+                if msg.path == "end_server_mow" {
+                    let error: Error = Error::new(ErrorKind::Other, "Server shutdown requested");
+                    self.respond_error(client, &msg, &error)?;
+                    return Err(error);
+                }
+                self.respond(client, &msg)?
+            },
             Err(e) => self.respond_invalid(client, &e)?
         };
 
@@ -140,10 +158,15 @@ impl WebServer {
         -> io::Result<()> {
         let mut response = HTTPMessage::new();
 
-        response.body = Self::replace_placeholders(RESPONSE_404, Some(request));
+        response.body = match error.kind() {
+            ErrorKind::PermissionDenied => Self::replace_placeholders(RESPONSE_403, Some(request)),
+            ErrorKind::Other => Self::replace_placeholders(RESPONSE_SHUTDOWN, Some(request)),
+            _ => Self::replace_placeholders(RESPONSE_404, Some(request)),
+        };
         response.status_code = match error.kind() {
             ErrorKind::NotFound => 404,
             ErrorKind::PermissionDenied => 403,
+            ErrorKind::Other => 200,
             _ => 500,
         };
         response.header.insert("Content-Type".to_string(), "text/html".to_string());
