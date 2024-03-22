@@ -117,6 +117,7 @@ impl WebServer {
         };
 
         let mut response = HTTPMessage::new();
+        response.path = request.path.clone();
 
         let mut content: Vec<u8> = Vec::new();
         file.read_to_end(&mut content);

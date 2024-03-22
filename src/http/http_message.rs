@@ -89,7 +89,8 @@ impl HTTPMessage {
 
         self.add("Content-Length", &self.body.len().to_string());
         if !self.header.contains_key("Content-Type") {
-            self.add("Content-Type", "text/html");
+            let content_type = Self::get_content_type_by_path(&self.path).to_string();
+            self.add("Content-Type", &content_type);
         }
         if self.protocol.is_empty() {
             self.protocol = String::from("HTTP/1.1");
@@ -102,6 +103,22 @@ impl HTTPMessage {
                 status_text,
                 header_text,
                 self.body))
+    }
+
+    fn get_content_type_by_path(path: &str) -> &str {
+        let extension = path.split(".").collect::<Vec<&str>>().into_iter().next_back();
+
+        match extension.unwrap_or("") {
+            "html" => "text/html",
+            "css" => "text/css",
+            "png" => "image/png",
+            "jpg" => "image/jpg",
+            "ttf" => "font/ttf",
+            "odf" => "font/odf",
+            "ico" => "image/ico",
+            "js" => "script/js",
+            _ => "text/plain"
+        }
     }
 
     fn get_status_code_text<'a>(code: u16) -> &'a str {
