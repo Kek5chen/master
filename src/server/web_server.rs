@@ -144,6 +144,7 @@ impl WebServer {
             ErrorKind::PermissionDenied => 403,
             _ => 500,
         };
+        response.header.insert("Content-Type".to_string(), "text/html".to_string());
 
         client.write_all(&response.make_response())
     }
