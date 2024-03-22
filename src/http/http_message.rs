@@ -1,5 +1,4 @@
 use std::{collections::HashMap};
-use std::cmp::min;
 use std::path::PathBuf;
 
 #[allow(dead_code)]
@@ -134,41 +133,41 @@ impl HTTPMessage {
 
     fn sanitize_path(path: &str) -> String {
         let decoded = Self::url_decode(path);
-        let mut normal_path = PathBuf::from(decoded);
+        let normal_path = PathBuf::from(decoded);
         let relative_path = normal_path.strip_prefix("/").unwrap_or(&normal_path);
 
         relative_path.to_str().unwrap_or_default().to_string()
     }
 
     fn url_decode(text: &str) -> String {
-        let text = text.replace('+', " ");
-        let mut chars: Vec<char> = text.chars().collect();
-        let mut next_percent = chars.iter()
-            .enumerate()
-            .find(|&(_, &c)| c == '%');
+        let mut decoded_bytes: Vec<u8>= Vec::new();
+        let mut chars = text.chars().peekable();
 
-        while let Some((index, _)) = next_percent {
-            let start = min(index + 1, chars.len());
-            let end = min(index + 3, chars.len());
-            let mut add_one = false;
-
-            let percent_byte: Vec<char> = chars.drain(index..end).collect();
-            if end - start == 2 {
-                if let Ok(value) = u8::from_str_radix(&percent_byte[1..3].iter().collect::<String>(), 16) {
-                    if let Some(c) = std::char::from_u32(value as u32) {
-                        chars.insert(index, c);
-                        add_one = true;
+        while let Some(c) = chars.next() {
+            if c == '%' {
+                let mut hex = String::new();
+                if let Some(c1) = chars.next() {
+                    if c1 != '%' {
+                        if let Some(c2) = chars.next() {
+                            hex.push(c1);
+                            hex.push(c2);
+                            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                                decoded_bytes.push(byte);
+                            }
+                        }
+                    } else {
+                        decoded_bytes.push(b'%');
                     }
                 }
-            }
 
-            next_percent = chars.iter()
-                .enumerate()
-                .skip(index + add_one as usize)
-                .find(|&(_, &c)| c == '%');
+            } else if c == '+' {
+                decoded_bytes.push(b' ');
+            } else {
+                decoded_bytes.push(c as u8);
+            }
         }
 
-        chars.iter().collect()
+        String::from_utf8(decoded_bytes).unwrap_or_default()
     }
 }
 
@@ -227,6 +226,11 @@ mod tests {
     fn test_percent_decode_with_utf8() {
         // Testing UTF-8 encoded characters (e.g., "é" as "%C3%A9")
         assert_eq!(HTTPMessage::url_decode("%C3%A9"), "é");
+    }
+
+    #[test]
+    fn test_percent_percent_escape() {
+        assert_eq!(HTTPMessage::url_decode("%%%20%%"), "% %");
     }
 }
 
