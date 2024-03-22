@@ -33,12 +33,14 @@ impl WebServer {
         }
     }
 
-    pub fn serve_http(&mut self) -> io::Result<()> {
+    pub fn serve_http(&mut self, port: u16) -> io::Result<()> {
         self.started_http = true;
-        self.server = Some(TcpListener::bind("127.0.0.1:8080")?);
+        self.server = Some(TcpListener::bind(format!("0.0.0.0:{port}"))?);
+        println!("Started webserver on 0.0.0.0:{port}");
 
         self.accept_clients();
 
+        println!("Stopping webserver...");
         Ok(())
     }
 
