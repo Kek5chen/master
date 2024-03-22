@@ -111,7 +111,6 @@ impl WebServer {
                  &request.request_type,
                  &request.path);
 
-        // TODO: sanitize path
         let mut file = match File::open(&request.path) {
             Ok(file) => file,
             Err(e) => return self.respond_error(client, request, &e),
