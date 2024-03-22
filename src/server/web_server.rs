@@ -119,12 +119,9 @@ impl WebServer {
         let mut response = HTTPMessage::new();
         response.path = request.path.clone();
 
-        let mut content: Vec<u8> = Vec::new();
-        file.read_to_end(&mut content);
+        file.read_to_end(&mut response.bin_data);
 
-        response.body = String::from_utf8(content).unwrap_or_default();
-
-        client.write_all(response.make_response().as_bytes())
+        client.write_all(&response.make_response())
     }
 
     fn respond_invalid(&self, client: &mut TcpStream, error: &Error) -> io::Result<()> {
@@ -134,7 +131,7 @@ impl WebServer {
         response.body = Self::replace_placeholders(RESPONSE_INVALID, None);
         response.status_code = 400;
 
-        client.write_all(response.make_response().as_bytes())
+        client.write_all(&response.make_response())
     }
 
     fn respond_error(&self, client: &mut TcpStream, request: &HTTPMessage, error: &Error)
@@ -148,7 +145,7 @@ impl WebServer {
             _ => 500,
         };
 
-        client.write_all(response.make_response().as_bytes())
+        client.write_all(&response.make_response())
     }
 
     fn replace_placeholders(text: &str, request: Option<&HTTPMessage>) -> String {

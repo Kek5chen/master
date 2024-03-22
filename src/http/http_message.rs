@@ -10,6 +10,7 @@ pub struct HTTPMessage {
     pub protocol: String,
     pub header: HashMap<String, String>,
     pub body: String,
+    pub bin_data: Vec<u8>,
 }
 
 #[allow(dead_code)]
@@ -23,6 +24,7 @@ impl HTTPMessage {
             protocol: String::from("HTTP/1.1"),
             header: HashMap::new(),
             body: String::new(),
+            bin_data: Vec::new(),
         }
     }
 
@@ -50,6 +52,7 @@ impl HTTPMessage {
             protocol,
             header: Self::parse_header(header),
             body: body.to_string(),
+            bin_data: Vec::new(),
         })
     }
 
@@ -83,11 +86,7 @@ impl HTTPMessage {
         header_map
     }
 
-    pub fn make_response(&mut self) -> String {
-        let status_text = Self::get_status_code_text(self.status_code);
-        let header_text = self.get_header_as_text();
-
-        self.add("Content-Length", &self.body.len().to_string());
+    pub fn make_response(&mut self) -> Vec<u8> {
         if !self.header.contains_key("Content-Type") {
             let content_type = Self::get_content_type_by_path(&self.path).to_string();
             self.add("Content-Type", &content_type);
@@ -95,14 +94,20 @@ impl HTTPMessage {
         if self.protocol.is_empty() {
             self.protocol = String::from("HTTP/1.1");
         }
+        self.add("Content-Length", &(self.body.len() + self.bin_data.len()).to_string());
 
-        String::from(
-            format!("{} {} {}\n{}\r\n\r\n{}",
-                &self.protocol,
-                &self.status_code,
-                status_text,
-                header_text,
-                self.body))
+        let status_text = Self::get_status_code_text(self.status_code);
+        let header_text = self.get_header_as_text();
+
+        let mut response = format!("{} {} {}\n{}\r\n\r\n{}",
+            &self.protocol,
+            &self.status_code,
+            status_text,
+            header_text,
+            self.body).as_bytes().to_vec();
+        response.extend_from_slice(&self.bin_data);
+
+        response
     }
 
     fn get_content_type_by_path(path: &str) -> &str {
