@@ -143,22 +143,29 @@ impl HTTPMessage {
     fn url_decode(text: &str) -> String {
         let text = text.replace('+', " ");
         let mut chars: Vec<char> = text.chars().collect();
-        let mut next_percent = chars.iter().enumerate().find(|&(_, &c)| c == '%');
+        let mut next_percent = chars.iter()
+            .enumerate()
+            .find(|&(_, &c)| c == '%');
 
         while let Some((index, _)) = next_percent {
             let start = min(index + 1, chars.len());
             let end = min(index + 3, chars.len());
+            let mut add_one = false;
 
             let percent_byte: Vec<char> = chars.drain(index..end).collect();
             if end - start == 2 {
                 if let Ok(value) = u8::from_str_radix(&percent_byte[1..3].iter().collect::<String>(), 16) {
                     if let Some(c) = std::char::from_u32(value as u32) {
                         chars.insert(index, c);
+                        add_one = true;
                     }
                 }
             }
 
-            next_percent = chars.iter().enumerate().find(|&(_, &c)| c == '%');
+            next_percent = chars.iter()
+                .enumerate()
+                .skip(index + add_one as usize)
+                .find(|&(_, &c)| c == '%');
         }
 
         chars.iter().collect()
