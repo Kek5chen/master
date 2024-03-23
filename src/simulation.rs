@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::{JoinHandle, Thread};
 
@@ -43,13 +43,18 @@ impl Simulation {
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut philos: Vec<JoinHandle<u32>> = Vec::with_capacity(self.nb_philo as usize);
+        let mut philos: Vec<(Arc<Philosopher>, JoinHandle<u32>)> = Vec::with_capacity(self.nb_philo as usize);
 
         self.owned_data.reserve(self.nb_philo as usize);
-        for _ in 0..self.nb_philo {
+        for i in 0..self.nb_philo {
             let philo_data = Arc::new(PhiloData::default());
             self.owned_data.push(philo_data.clone());
-            philos.push(Philosopher::create(self.shared_data.clone(), philo_data));
+            let philo = Philosopher::create(i, self.shared_data.clone(), philo_data);
+            philos.push(philo);
+        }
+
+        for philo in philos {
+            philo.1.join().expect("Could not join thread.");
         }
         Ok(())
     }
@@ -57,19 +62,29 @@ impl Simulation {
 
 pub struct Philosopher {
     sim_data: Arc<SharedPhiloData>,
+    data: Arc<PhiloData>,
 }
 
 impl Philosopher {
-    fn create(sim_data: Arc<SharedPhiloData>, philo_data: Arc<PhiloData>) -> JoinHandle<u32> {
-        thread::spawn(move || {
-            let mut philo = Philosopher {
-                sim_data
-            };
-            philo.live()
-        })
+    fn create(philo_num: u32, sim_data: Arc<SharedPhiloData>, philo_data: Arc<PhiloData>) -> (Arc<Philosopher>, JoinHandle<u32>) {
+        let mut philo = Arc::new(Philosopher {
+            sim_data,
+            data: philo_data,
+        });
+
+        let philo_clone = philo.clone();
+        let handle = thread::Builder::new()
+            .name(format!("Philosopher {}", philo_num))
+            .spawn(move || {
+                philo_clone.live()
+        }).unwrap();
+
+
+        (philo, handle)
     }
 
     fn live(&self) -> u32 {
+        println!("Henlo from {}", thread::current().name().unwrap_or("Philosopher X"));
         0
     }
 }
