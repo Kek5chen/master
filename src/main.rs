@@ -35,7 +35,7 @@ fn main() {
         return;
     }
 
-    let simulation = match init_simulation(&mut args) {
+    let mut simulation = match init_simulation(&mut args) {
         Ok(sim) => sim,
         Err(e) => {
             eprintln!("The parameters you supplied were invalid. {}", e);
