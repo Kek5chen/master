@@ -1,9 +1,7 @@
 mod simulation;
 
 use std::env;
-use std::env::Args;
 use std::error::Error;
-use std::thread::{sleep, sleep_ms};
 use simulation::Simulation;
 
 fn init_simulation(args: &Vec<String>) -> Result<Simulation, Box<dyn Error>> {

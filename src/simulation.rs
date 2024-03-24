@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize};
 use std::sync::atomic::Ordering::*;
 use std::thread;
-use std::thread::{current, JoinHandle, sleep, Thread};
+use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, Instant};
 
 struct SharedPhiloData {
@@ -91,7 +91,12 @@ impl Simulation {
             }
         }
         for (_, handle) in philos {
-            handle.join();
+            if !handle.is_finished() {
+                handle.join()
+                    .expect("'Bout to tell you how I'm doin' and shit")
+                    .or::<()>(Ok(()))
+                    .expect("I got the devil on my phone, he told me, keep doin' this shit");
+            }
         }
         Ok(())
     }
