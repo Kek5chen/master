@@ -30,7 +30,7 @@ fn main() {
 
     if args.len() != 5 && args.len() != 6 {
         println!("Usage: {} <nb_philo> <time_to_die> <time_to_eat> <time_to_sleep> [nb_meals]",
-                 args.get(0).unwrap());
+                 args.first().unwrap());
         return;
     }
 
