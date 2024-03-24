@@ -63,7 +63,7 @@ impl Simulation {
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         println!("Starting simulation..");
-        let mut philos: Vec<(Arc<Philosopher>, JoinHandle<()>)> = Vec::with_capacity(self.nb_philo as usize);
+        let mut philos: Vec<(Arc<Philosopher>, JoinHandle<Result<(), ()>>)> = Vec::with_capacity(self.nb_philo as usize);
 
         self.owned_data.reserve(self.nb_philo as usize);
         *self.shared_data.start_time.write().unwrap() = Instant::now();
@@ -79,7 +79,7 @@ impl Simulation {
         }
 
         while !self.shared_data.done.load(Acquire) {
-            for (philo, handle) in &philos {
+            for (philo, _) in &philos {
                 let ms_since_last_eat = philo.data.last_eat.read().unwrap().elapsed().as_millis();
 
                 if ms_since_last_eat > self.shared_data.time_to_die as u128 && !*philo.data.is_eating.read().unwrap() {
@@ -89,6 +89,9 @@ impl Simulation {
                     Philosopher::print_manual(PhiloAction::Die, time, philo.data.num.load(Relaxed));
                 }
             }
+        }
+        for (_, handle) in philos {
+            handle.join();
         }
         Ok(())
     }
@@ -112,8 +115,8 @@ struct Philosopher {
 }
 
 impl<'a> Philosopher {
-    fn create(sim_data: Arc<SharedPhiloData>, philo_data: Arc<PhiloData>) -> (Arc<Philosopher>, JoinHandle<()>) {
-        let mut philo = Arc::new(Philosopher {
+    fn create(sim_data: Arc<SharedPhiloData>, philo_data: Arc<PhiloData>) -> (Arc<Philosopher>, JoinHandle<Result<(), ()>>) {
+        let philo = Arc::new(Philosopher {
             sim_data,
             data: philo_data,
         });
@@ -144,25 +147,29 @@ impl<'a> Philosopher {
         println!("{}\t\tphilo [{}]  {}", time, num, action_text)
     }
 
-    fn print_action(&self, action: PhiloAction) {
+    fn print_action(&self, action: PhiloAction) -> Result<(), ()>{
+        if self.sim_data.done.load(Acquire) {
+            return Err(());
+        }
         let current_time = self.sim_data.start_time.read().unwrap().elapsed();
         Self::print_manual(action, current_time.as_millis(), self.data.num.load(Relaxed));
+        Ok(())
     }
 
-    fn live(&self) {
+    fn live(&self) -> Result<(), ()>{
         *self.data.last_eat.write().unwrap() = Instant::now();
         for _ in 0..self.sim_data.nb_meals {
             if self.sim_data.done.load(Acquire) {
-                return;
+                return Ok(());
             }
             // pick up forks
             let lock = self.data.forks[0].lock();
-            self.print_action(PhiloAction::PickLeftFork);
+            self.print_action(PhiloAction::PickLeftFork)?;
             let lock2 = self.data.forks[1].lock();
-            self.print_action(PhiloAction::PickRightFork);
+            self.print_action(PhiloAction::PickRightFork)?;
 
             // eat
-            self.print_action(PhiloAction::Eat);
+            self.print_action(PhiloAction::Eat)?;
             *self.data.is_eating.write().unwrap() = true;
             self.data.meals_eaten.fetch_add(1, Relaxed);
             sleep(Duration::from_millis(self.sim_data.time_to_eat as u64));
@@ -171,15 +178,17 @@ impl<'a> Philosopher {
 
             // drop forks
             drop(lock);
-            self.print_action(PhiloAction::DropLeftFork);
+            self.print_action(PhiloAction::DropLeftFork)?;
             drop(lock2);
-            self.print_action(PhiloAction::DropRightFork);
+            self.print_action(PhiloAction::DropRightFork)?;
 
             // sleep
-            self.print_action(PhiloAction::Sleep);
+            self.print_action(PhiloAction::Sleep)?;
             sleep(Duration::from_millis(self.sim_data.time_to_sleep as u64));
+            self.print_action(PhiloAction::WakeUp)?;
         }
+        self.print_action(PhiloAction::Finish)?;
         self.sim_data.done.store(true, Release);
-        self.print_action(PhiloAction::Finish);
+        Ok(())
     }
 }
