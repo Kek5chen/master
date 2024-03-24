@@ -93,6 +93,7 @@ impl Simulation {
         for (_, handle) in philos {
             if !handle.is_finished() {
                 handle.join()
+                    .or::<()>(Ok(Ok(())))
                     .expect("'Bout to tell you how I'm doin' and shit")
                     .or::<()>(Ok(()))
                     .expect("I got the devil on my phone, he told me, keep doin' this shit");
