@@ -30,7 +30,7 @@ impl PhiloData {
             meals_eaten: AtomicU32::new(0),
             last_eat: RwLock::new(Instant::now()),
             is_eating: RwLock::new(false),
-            forks: [left_fork, right_fork]
+            forks: [left_fork, right_fork],
         }
     }
 }
