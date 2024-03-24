@@ -164,6 +164,7 @@ impl<'a> Philosopher {
 
     fn live(&self) -> Result<(), ()>{
         *self.data.last_eat.write().unwrap() = Instant::now();
+        sleep(Duration::from_micros(self.data.num.load(Relaxed) as u64));
         for _ in 0..self.sim_data.nb_meals {
             if self.sim_data.done.load(Acquire) {
                 return Ok(());
