@@ -2,6 +2,7 @@ use std::fs::File;
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::io::{self, Error, ErrorKind, Read, Write};
 use std::io::ErrorKind::WouldBlock;
+use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime};
 
 use crate::http::HTTPMessage;
@@ -51,17 +52,7 @@ impl WebServer {
         for client in server.incoming() {
             match client {
                 Ok(mut client) => {
-                    match self.handle_client(&mut client) {
-                        Ok(_) => (),
-                        Err(e) if e.kind() == ErrorKind::Other => {
-                            println!("{e}");
-                            return Err(e);
-                        },
-                        Err(e) => {
-                            eprintln!("Error handling client: {e}");
-                            continue;
-                        }
-                    }
+                    self.handle_client(client);
                 },
                 Err(e) => eprintln!("Connection failed: {e}"),
             }
@@ -69,26 +60,40 @@ impl WebServer {
         Ok(())
     }
 
-    fn handle_client(&self, client: &mut TcpStream) -> io::Result<()> {
+    fn handle_client(&self, mut client: TcpStream) -> JoinHandle<()> {
+        std::thread::spawn(move || {
+            match Self::handle_client_thread(client) {
+                Ok(_) => (),
+                Err(e) if e.kind() == ErrorKind::Other => {
+                    println!("{e}");
+                },
+                Err(e) => {
+                    eprintln!("Error handling client: {e}");
+                }
+            };
+        })
+    }
+
+    fn handle_client_thread(mut client: TcpStream) -> io::Result<()> {
         client.set_nonblocking(true)?;
 
-        match self.read_request(client) {
+        match Self::read_request(&mut client) {
             Ok(msg) => {
                 if msg.path == "end_server_mow" {
                     let error: Error = Error::new(ErrorKind::Other, "Server shutdown requested");
-                    self.respond_error(client, &msg, &error)?;
+                    Self::respond_error(&mut client, &msg, &error)?;
                     return Err(error);
                 }
-                self.respond(client, &msg)?
+                Self::respond(&mut client, &msg)?
             },
-            Err(e) => self.respond_invalid(client, &e)?
+            Err(e) => Self::respond_invalid(&mut client, &e)?
         };
 
         client.flush()?;
         client.shutdown(Shutdown::Both)
     }
 
-    fn read_request(&self, client: &mut TcpStream) -> io::Result<HTTPMessage> {
+    fn read_request(client: &mut TcpStream) -> io::Result<HTTPMessage> {
         let mut buffer = [0; 1024];
         let mut content = Vec::new();
         let mut started_reading = SystemTime::now();
@@ -124,7 +129,7 @@ impl WebServer {
         }
     }
 
-    fn respond(&self, client: &mut TcpStream, request: &HTTPMessage) -> io::Result<()> {
+    fn respond(client: &mut TcpStream, request: &HTTPMessage) -> io::Result<()> {
         println!("[{} on {}] {} for path {}",
                  &client.peer_addr()?,
                  request.get("User-Agent").unwrap_or(&String::from("No User Agent")),
@@ -133,7 +138,7 @@ impl WebServer {
 
         let mut file = match File::open(&request.path) {
             Ok(file) => file,
-            Err(e) => return self.respond_error(client, request, &e),
+            Err(e) => return Self::respond_error(client, request, &e),
         };
 
         let mut response = HTTPMessage::new();
@@ -144,7 +149,7 @@ impl WebServer {
         client.write_all(&response.make_response())
     }
 
-    fn respond_invalid(&self, client: &mut TcpStream, error: &Error) -> io::Result<()> {
+    fn respond_invalid(client: &mut TcpStream, error: &Error) -> io::Result<()> {
         println!("[{}] Invalid request", &client.peer_addr()?);
         let mut response = HTTPMessage::new();
 
@@ -154,7 +159,7 @@ impl WebServer {
         client.write_all(&response.make_response())
     }
 
-    fn respond_error(&self, client: &mut TcpStream, request: &HTTPMessage, error: &Error)
+    fn respond_error(client: &mut TcpStream, request: &HTTPMessage, error: &Error)
         -> io::Result<()> {
         let mut response = HTTPMessage::new();
 
