@@ -3,6 +3,7 @@ use std::ffi::{CStr, CString};
 use ash::extensions::khr::Surface;
 use ash::vk;
 use ash::vk::{InstanceCreateFlags, SurfaceKHR};
+use ash_window::enumerate_required_extensions;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
@@ -20,8 +21,8 @@ impl App {
     pub fn new(app_name: &str, window_width: u32, window_height: u32) -> Result<Self, Box<dyn Error>> {
         let entry = Self::initialize_vulkan()?;
 
-        let vk_instance = Self::create_vulkan_instance(app_name, &entry)?;
         let (event_loop, window) = Self::create_window(app_name, window_width, window_height)?;
+        let vk_instance = Self::create_vulkan_instance(app_name, &window, &entry)?;
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
         // Select a physical device
@@ -51,7 +52,8 @@ impl App {
 
     const ENGINE_NAME: &'static[u8] = b"Silly Engine\0";
 
-    fn create_vulkan_instance(app_name: &str, entry: &ash::Entry) -> Result<ash::Instance, Box<dyn Error>>{
+    fn create_vulkan_instance(app_name: &str, window: &winit::window::Window, entry: &ash::Entry)
+        -> Result<ash::Instance, Box<dyn Error>> {
         let app_name: CString = CString::new(app_name)?;
 
         let app_info = vk::ApplicationInfo::builder()
@@ -61,10 +63,14 @@ impl App {
             .engine_version(1)
             .api_version(vk::make_api_version(0, 1, 0, 0));
 
+        let required_extensions =
+            enumerate_required_extensions(window.raw_display_handle())
+                .expect("Could not enumerate the required extensions");
+
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .flags(InstanceCreateFlags::default())
-            .enabled_extension_names(&[])
+            .enabled_extension_names(required_extensions)
             .enabled_layer_names(&[]);
 
         let instance: ash::Instance = unsafe {
