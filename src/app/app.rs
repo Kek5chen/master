@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
 use ash::extensions::khr::Surface;
-use ash::{Instance, vk};
-use ash::vk::{InstanceCreateFlags, PhysicalDevice, SurfaceKHR};
+use ash::vk;
+use ash::vk::{Handle, InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR};
 use ash_window::enumerate_required_extensions;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::event_loop::EventLoop;
@@ -25,7 +25,7 @@ impl App {
         let (vk_instance, required_extensions) = Self::create_vulkan_instance(app_name, &window, &entry)?;
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
-        let pdevice = Self::select_gpu(&vk_instance, required_extensions);
+        let pdevice = Self::select_gpu(&vk_instance, &required_extensions)?;
         // Create a logical device and queues
         // Create a swap chain
         // Create image views
@@ -53,7 +53,7 @@ impl App {
     const ENGINE_NAME: &'static[u8] = b"Silly Engine\0";
 
     fn create_vulkan_instance(app_name: &str, window: &winit::window::Window, entry: &ash::Entry)
-        -> Result<(ash::Instance, &[*const c_char]), Box<dyn Error>> {
+        -> Result<(ash::Instance, Vec<*const c_char>), Box<dyn Error>> {
         let app_name: CString = CString::new(app_name)?;
 
         let app_info = vk::ApplicationInfo::builder()
@@ -65,12 +65,12 @@ impl App {
 
         let required_extensions =
             enumerate_required_extensions(window.raw_display_handle())
-                .expect("Could not enumerate the required extensions!");
+                .expect("Could not enumerate the required extensions!").to_vec();
 
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .flags(InstanceCreateFlags::default())
-            .enabled_extension_names(required_extensions)
+            .enabled_extension_names(&required_extensions)
             .enabled_layer_names(&[]);
 
         let instance: ash::Instance = unsafe {
@@ -119,7 +119,7 @@ impl App {
         Ok((surface, surface_loader))
     }
 
-    fn is_gpu_suitable(pdevice: &PhysicalDevice, vk_instance: ash::Instance, required_extensions: &[*const c_char]) -> bool{
+    fn is_gpu_suitable(pdevice: &PhysicalDevice, vk_instance: &ash::Instance, required_extensions: &[*const c_char]) -> bool{
         let queue_families = unsafe {
             vk_instance.get_physical_device_queue_family_properties(*pdevice)
         };
@@ -128,36 +128,53 @@ impl App {
             info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
         });
 
-        suitable = suitable && unsafe {
-            let device_extension_props = vk_instance
-                .enumerate_device_extension_properties(*pdevice)
-                .expect("Failed to get device extension properties");
-            let extension_names: Vec<[c_char; 256]> = device_extension_props
-                .iter()
-                .map(|prop| prop.extension_name)
-                .collect();
-
-            required_extensions
-                .iter()
-                .all(|ext| extension_names
-                    .iter()
-                    .any(|ext2| unsafe { CStr::from_ptr(*ext) == CStr::from_ptr(ext2.as_ptr())}))
-        };
+        // // I accidentally tested Vulkan Extensions against Device Extensions here.. Ignore so far
+        // suitable = suitable && unsafe {
+        //     let device_extension_props = vk_instance
+        //         .enumerate_device_extension_properties(*pdevice)
+        //         .expect("Failed to get device extension properties");
+        //     let extension_names: Vec<[c_char; 256]> = device_extension_props
+        //         .iter()
+        //         .map(|prop| prop.extension_name)
+        //         .collect();
+        //
+        //     required_extensions
+        //         .iter()
+        //         .all(|ext| extension_names
+        //             .iter()
+        //             .any(|ext2| unsafe {
+        //                 CStr::from_ptr(*ext) == CStr::from_ptr(ext2.as_ptr())
+        //             }))
+        // };
 
         suitable
     }
 
-    fn select_gpu(vk_instance: &Instance, required_extensions: &[*const c_char]) -> Option<PhysicalDevice> {
+    fn select_gpu(vk_instance: &ash::Instance, required_extensions: &Vec<*const c_char>) -> Result<PhysicalDevice, Box<dyn Error>> {
         let pdevices = unsafe {
             vk_instance
                 .enumerate_physical_devices()
                 .expect("Could not enumerate physical devices!")
         };
 
+        let mut device_props: Option<PhysicalDeviceProperties> = None;
         let pdevice = pdevices.iter().find_map(|device| {
+            unsafe {
+                device_props = Some(vk_instance.get_physical_device_properties(*device));
+                println!("[...] Found GPU: {:?}",
+                         CStr::from_ptr(device_props.unwrap().device_name.as_ptr()));
+            }
+            match Self::is_gpu_suitable(device, vk_instance, &required_extensions) {
+                true => Some(device),
+                false => None,
+            }
+        }).ok_or("Could not find a supported device to render onto.")?;
 
-        })
-            .expect("Could not find a supported device to render onto.");
+        unsafe {
+            println!("[✔] Selected GPU: {:?}", CStr::from_ptr(device_props.unwrap().device_name.as_ptr()));
+        }
+
+        Ok(*pdevice)
     }
 }
 
