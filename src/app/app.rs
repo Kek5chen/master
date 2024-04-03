@@ -10,28 +10,27 @@ pub struct App {
 
 impl App {
     pub fn new(app_name: &str, window_width: u32, window_height: u32) -> Result<Self, Box<dyn Error>> {
-        unsafe {
-            let mut entry = Self::initialize_vulkan()?;
+        let entry = Self::initialize_vulkan()?;
 
-            let mut app = App {
-                event_loop: None,
-                window: None,
-                entry,
-            };
+        let mut app = App {
+            event_loop: None,
+            window: None,
+            entry,
+        };
 
-            app.create_window(app_name, window_width, window_height)?;
-            // Create a Vulkan instance
-            // Create a debug messenger (optional)
-            // Create a Vulkan surface
-            // Select a physical device
-            // Create a logical device and queues
-            // Create a swap chain
-            // Create image views
-            // Setup framebuffers, command pools, and command buffers
-            // Initialize synchronization primitives
+        app.create_window(app_name, window_width, window_height)?;
+        // Create a Vulkan instance
+        // Create a debug messenger (optional)
+        // Create a Vulkan surface
+        // Select a physical device
+        // Create a logical device and queues
+        // Create a swap chain
+        // Create image views
+        // Setup framebuffers, command pools, and command buffers
+        // Initialize synchronization primitives
 
-            Ok(app)
-        }
+        Ok(app)
+
     }
 
     fn initialize_vulkan() -> Result<ash::Entry, Box<dyn Error>> {
