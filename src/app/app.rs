@@ -65,7 +65,7 @@ impl App {
 
         let required_extensions =
             enumerate_required_extensions(window.raw_display_handle())
-                .expect("Could not enumerate the required extensions");
+                .expect("Could not enumerate the required extensions!");
 
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
@@ -76,10 +76,10 @@ impl App {
         let instance: ash::Instance = unsafe {
             entry.
                 create_instance(&create_info, None)
-                .expect("Could not create Vulkan instance")
+                .expect("Could not create Vulkan instance!")
         };
 
-        println!("[✔️] Vulkan Instance successfully created.");
+        println!("[✔] Vulkan Instance successfully created.");
 
         Ok(instance)
     }
@@ -94,6 +94,8 @@ impl App {
             ))
             .build(&event_loop)
             .unwrap();
+
+        println!("[✔] Created App Window.");
 
         Ok((event_loop, window))
     }
@@ -111,6 +113,9 @@ impl App {
         };
 
         let surface_loader = Surface::new(entry, vk_instance);
+
+        println!("[✔] Created Vulkan Surface.");
+
         Ok((surface, surface_loader))
     }
 }
@@ -119,6 +124,9 @@ impl Drop for App {
     fn drop(&mut self) {
         unsafe {
             self.surface_loader.destroy_surface(self.surface, None);
+            println!("[✔] Dropped Vulkan Surface.");
+            self.window.set_visible(false);
+            println!("[✔] Hid window for later drop.")
         }
     }
 }
