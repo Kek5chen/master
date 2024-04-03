@@ -1,8 +1,8 @@
 use std::error::Error;
-use std::ffi::{CStr, CString};
+use std::ffi::{c_char, CStr, CString};
 use ash::extensions::khr::Surface;
-use ash::vk;
-use ash::vk::{InstanceCreateFlags, SurfaceKHR};
+use ash::{Instance, vk};
+use ash::vk::{InstanceCreateFlags, PhysicalDevice, SurfaceKHR};
 use ash_window::enumerate_required_extensions;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::event_loop::EventLoop;
@@ -22,10 +22,10 @@ impl App {
         let entry = Self::initialize_vulkan()?;
 
         let (event_loop, window) = Self::create_window(app_name, window_width, window_height)?;
-        let vk_instance = Self::create_vulkan_instance(app_name, &window, &entry)?;
+        let (vk_instance, required_extensions) = Self::create_vulkan_instance(app_name, &window, &entry)?;
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
-        // Select a physical device
+        let pdevice = Self::select_gpu(&vk_instance, required_extensions);
         // Create a logical device and queues
         // Create a swap chain
         // Create image views
@@ -53,7 +53,7 @@ impl App {
     const ENGINE_NAME: &'static[u8] = b"Silly Engine\0";
 
     fn create_vulkan_instance(app_name: &str, window: &winit::window::Window, entry: &ash::Entry)
-        -> Result<ash::Instance, Box<dyn Error>> {
+        -> Result<(ash::Instance, &[*const c_char]), Box<dyn Error>> {
         let app_name: CString = CString::new(app_name)?;
 
         let app_info = vk::ApplicationInfo::builder()
@@ -81,7 +81,7 @@ impl App {
 
         println!("[✔] Vulkan Instance successfully created.");
 
-        Ok(instance)
+        Ok((instance, required_extensions))
     }
 
     fn create_window(title: &str, width: u32, height: u32) -> Result<(EventLoop<()>, winit::window::Window), Box<dyn Error>> {
@@ -117,6 +117,47 @@ impl App {
         println!("[✔] Created Vulkan Surface.");
 
         Ok((surface, surface_loader))
+    }
+
+    fn is_gpu_suitable(pdevice: &PhysicalDevice, vk_instance: ash::Instance, required_extensions: &[*const c_char]) -> bool{
+        let queue_families = unsafe {
+            vk_instance.get_physical_device_queue_family_properties(*pdevice)
+        };
+
+        let mut suitable = queue_families.iter().enumerate().any(|(idx, info)| {
+            info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+        });
+
+        suitable = suitable && unsafe {
+            let device_extension_props = vk_instance
+                .enumerate_device_extension_properties(*pdevice)
+                .expect("Failed to get device extension properties");
+            let extension_names: Vec<[c_char; 256]> = device_extension_props
+                .iter()
+                .map(|prop| prop.extension_name)
+                .collect();
+
+            required_extensions
+                .iter()
+                .all(|ext| extension_names
+                    .iter()
+                    .any(|ext2| unsafe { CStr::from_ptr(*ext) == CStr::from_ptr(ext2.as_ptr())}))
+        };
+
+        suitable
+    }
+
+    fn select_gpu(vk_instance: &Instance, required_extensions: &[*const c_char]) -> Option<PhysicalDevice> {
+        let pdevices = unsafe {
+            vk_instance
+                .enumerate_physical_devices()
+                .expect("Could not enumerate physical devices!")
+        };
+
+        let pdevice = pdevices.iter().find_map(|device| {
+
+        })
+            .expect("Could not find a supported device to render onto.");
     }
 }
 
