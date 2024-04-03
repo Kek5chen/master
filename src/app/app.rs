@@ -1,11 +1,6 @@
 use std::error::Error;
-use std::ffi::{c_char, CStr, CString};
-use ash::extensions::khr;
-use ash::{Entry, vk};
-use ash_window::enumerate_required_extensions;
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
-use raw_window_handle::{HasRawDisplayHandle};
 
 pub struct App {
     event_loop: Option<EventLoop<()>>,
@@ -16,14 +11,34 @@ pub struct App {
 impl App {
     pub fn new(app_name: &str, window_width: u32, window_height: u32) -> Result<Self, Box<dyn Error>> {
         unsafe {
+            let mut entry = Self::initialize_vulkan()?;
+
             let mut app = App {
                 event_loop: None,
                 window: None,
-                entry: Entry::linked()
+                entry,
             };
 
             app.create_window(app_name, window_width, window_height)?;
+            // Create a Vulkan instance
+            // Create a debug messenger (optional)
+            // Create a Vulkan surface
+            // Select a physical device
+            // Create a logical device and queues
+            // Create a swap chain
+            // Create image views
+            // Setup framebuffers, command pools, and command buffers
+            // Initialize synchronization primitives
+
             Ok(app)
+        }
+    }
+
+    fn initialize_vulkan() -> Result<ash::Entry, Box<dyn Error>> {
+        unsafe {
+            let entry = ash::Entry::load()?;
+
+            Ok(entry)
         }
     }
 
