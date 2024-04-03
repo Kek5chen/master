@@ -2,7 +2,7 @@ use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
 use ash::extensions::khr::Surface;
 use ash::vk;
-use ash::vk::{Handle, InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR};
+use ash::vk::{InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR};
 use ash_window::enumerate_required_extensions;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::event_loop::EventLoop;
@@ -26,7 +26,7 @@ impl App {
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
         let pdevice = Self::select_gpu(&vk_instance, &required_extensions)?;
-        // Create a logical device and queues
+        let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, pdevice)?;
         // Create a swap chain
         // Create image views
         // Setup framebuffers, command pools, and command buffers
@@ -175,6 +175,33 @@ impl App {
         }
 
         Ok(*pdevice)
+    }
+    fn create_logical_device_and_queues(vk_instance: &ash::Instance, pdevice: PhysicalDevice) -> Result<(ash::Device, vk::Queue), Box<dyn Error>> {
+        let queue_family_index = 0;
+        let queue_priorities = [1.0_f32];
+
+        let queue_create_info = vk::DeviceQueueCreateInfo::builder()
+            .queue_family_index(queue_family_index)
+            .queue_priorities(&queue_priorities);
+
+        let physical_device_features = vk::PhysicalDeviceFeatures::builder();
+
+        let device_create_info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(std::slice::from_ref(&queue_create_info))
+            .enabled_features(&physical_device_features)
+            .enabled_extension_names(&[]);
+
+        let device: ash::Device = unsafe {
+            vk_instance
+                .create_device(pdevice, &device_create_info, None)
+                .expect("Failed to create logical device")
+        };
+
+        let graphics_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
+
+        println!("[✔] Created Logical Device and Graphics Queue.");
+
+        Ok((device, graphics_queue))
     }
 }
 
