@@ -3,7 +3,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::mem::swap;
 use ash::extensions::khr::{Surface, Swapchain};
 use ash::{vk};
-use ash::vk::{InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR, SwapchainKHR};
+use ash::vk::{ImageViewCreateInfo, InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR, SwapchainKHR};
 use ash_window::enumerate_required_extensions;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::event_loop::EventLoop;
@@ -29,6 +29,7 @@ impl App {
         let pdevice = Self::select_gpu(&vk_instance, &surface_loader, &surface)?;
         let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, &pdevice, &surface_loader, &surface)?;
         let (swapchain_loader, swapchain) = Self::create_swapchain(&vk_instance, &pdevice, &ldevice, &surface_loader, &surface)?;
+        let image_views = Self::create_image_views(&ldevice, &swapchain_loader, swapchain);
         // Create image views
         // Setup framebuffers, command pools, and command buffers
         // Initialize synchronization primitives
@@ -282,6 +283,38 @@ impl App {
         println!("[✔] Swapchain created");
 
         Ok((swapchain_loader, swapchain))
+    }
+
+    fn create_image_views(device: &ash::Device, swapchain: &Swapchain, swapchain_khr: SwapchainKHR)
+        -> Vec<vk::ImageView> {
+        let swp_images = unsafe {
+            swapchain.get_swapchain_images(swapchain_khr)
+            .expect("Couldn't get Swapchain Images.")
+        };
+        swp_images.iter().map(|&img| {
+            let create_info = ImageViewCreateInfo::builder()
+                .image(img)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(vk::Format::B8G8R8A8_SRGB)
+                .components(vk::ComponentMapping::default())
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1
+                });
+
+            let image_view = unsafe {
+                device
+                    .create_image_view(&create_info, None)
+                    .expect("Failed to create image view.")
+            };
+
+            println!("[✔] Image View created");
+
+            image_view
+        }).collect()
     }
 }
 
