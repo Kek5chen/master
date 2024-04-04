@@ -22,7 +22,7 @@ impl App {
         let entry = Self::initialize_vulkan()?;
 
         let (event_loop, window) = Self::create_window(app_name, window_width, window_height)?;
-        let (vk_instance, required_extensions) = Self::create_vulkan_instance(app_name, &window, &entry)?;
+        let vk_instance = Self::create_vulkan_instance(app_name, &window, &entry)?;
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
         let pdevice = Self::select_gpu(&vk_instance, &surface_loader, &surface)?;
@@ -54,7 +54,7 @@ impl App {
     const ENGINE_NAME: &'static[u8] = b"Silly Engine\0";
 
     fn create_vulkan_instance(app_name: &str, window: &winit::window::Window, entry: &ash::Entry)
-        -> Result<(ash::Instance, Vec<*const c_char>), Box<dyn Error>> {
+        -> Result<ash::Instance, Box<dyn Error>> {
         let app_name: CString = CString::new(app_name)?;
 
         let app_info = vk::ApplicationInfo::builder()
@@ -82,7 +82,7 @@ impl App {
 
         println!("[✔] Vulkan Instance successfully created.");
 
-        Ok((instance, required_extensions))
+        Ok(instance)
     }
 
     fn create_window(title: &str, width: u32, height: u32) -> Result<(EventLoop<()>, winit::window::Window), Box<dyn Error>> {
