@@ -291,7 +291,7 @@ impl App {
             swapchain.get_swapchain_images(swapchain_khr)
             .expect("Couldn't get Swapchain Images.")
         };
-        swp_images.iter().map(|&img| {
+        let image_views: Vec<vk::ImageView> = swp_images.iter().map(|&img| {
             let create_info = ImageViewCreateInfo::builder()
                 .image(img)
                 .view_type(vk::ImageViewType::TYPE_2D)
@@ -314,7 +314,13 @@ impl App {
             println!("[✔] Image View created");
 
             image_view
-        }).collect()
+        }).collect();
+
+        println!("[✔] {} Image View{} created",
+                 image_views.len(),
+                 if image_views.len() > 1 {"s"} else {""} );
+
+        image_views
     }
 }
 
