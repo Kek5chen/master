@@ -26,7 +26,7 @@ impl App {
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
         let pdevice = Self::select_gpu(&vk_instance, &required_extensions)?;
-        let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, pdevice)?;
+        let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, &pdevice)?;
         // Create a swap chain
         // Create image views
         // Setup framebuffers, command pools, and command buffers
@@ -120,14 +120,20 @@ impl App {
         Ok((surface, surface_loader))
     }
 
-    fn is_gpu_suitable(pdevice: &PhysicalDevice, vk_instance: &ash::Instance, required_extensions: &[*const c_char]) -> bool{
+    fn find_suitable_queue_family(vk_instance: &ash::Instance, pdevice: &PhysicalDevice) -> Option<usize> {
         let queue_families = unsafe {
             vk_instance.get_physical_device_queue_family_properties(*pdevice)
         };
 
-        let mut suitable = queue_families.iter().enumerate().any(|(idx, info)| {
-            info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+        let mut suitable = queue_families.iter().enumerate().find_map(|(idx, info)| {
+            if info.queue_flags.contains(vk::QueueFlags::GRAPHICS) { Some(idx) } else { None }
         });
+
+        suitable
+    }
+
+    fn is_gpu_suitable(pdevice: &PhysicalDevice, vk_instance: &ash::Instance, required_extensions: &[*const c_char]) -> bool{
+        let mut suitable = Self::find_suitable_queue_family(vk_instance, pdevice).is_some();
 
         // // I accidentally tested Vulkan Extensions against Device Extensions here.. Ignore so far
         // suitable = suitable && unsafe {
@@ -165,7 +171,7 @@ impl App {
                 println!("[...] Found GPU: {:?}",
                          CStr::from_ptr(device_props.unwrap().device_name.as_ptr()));
             }
-            match Self::is_gpu_suitable(device, vk_instance, &required_extensions) {
+            match Self::is_gpu_suitable(device, vk_instance, required_extensions) {
                 true => Some(device),
                 false => None,
             }
@@ -177,8 +183,9 @@ impl App {
 
         Ok(*pdevice)
     }
-    fn create_logical_device_and_queues(vk_instance: &ash::Instance, pdevice: PhysicalDevice) -> Result<(ash::Device, vk::Queue), Box<dyn Error>> {
-        let queue_family_index = 0;
+    fn create_logical_device_and_queues(vk_instance: &ash::Instance, pdevice: &PhysicalDevice) -> Result<(ash::Device, vk::Queue), Box<dyn Error>> {
+        let queue_family_index = Self::find_suitable_queue_family(vk_instance, pdevice)
+            .expect("No suitable queue family found") as u32;
         let queue_priorities = [1.0_f32];
 
         let queue_create_info = vk::DeviceQueueCreateInfo::builder()
@@ -194,7 +201,7 @@ impl App {
 
         let device: ash::Device = unsafe {
             vk_instance
-                .create_device(pdevice, &device_create_info, None)
+                .create_device(*pdevice, &device_create_info, None)
                 .expect("Failed to create logical device")
         };
 
