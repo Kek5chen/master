@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
-use ash::extensions::khr::Surface;
-use ash::vk;
-use ash::vk::{InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR};
+use ash::extensions::khr::{Surface, Swapchain};
+use ash::{vk};
+use ash::vk::{InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR, SwapchainKHR};
 use ash_window::enumerate_required_extensions;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::event_loop::EventLoop;
@@ -25,9 +25,9 @@ impl App {
         let (vk_instance, required_extensions) = Self::create_vulkan_instance(app_name, &window, &entry)?;
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
-        let pdevice = Self::select_gpu(&vk_instance, &required_extensions, &surface_loader, &surface)?;
+        let pdevice = Self::select_gpu(&vk_instance, &surface_loader, &surface)?;
         let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, &pdevice, &surface_loader, &surface)?;
-        // Create a swap chain
+        let (swapchain_loader, swapchain) = Self::create_swapchain(&vk_instance, &pdevice, &ldevice, &surface_loader, &surface)?;
         // Create image views
         // Setup framebuffers, command pools, and command buffers
         // Initialize synchronization primitives
@@ -141,35 +141,27 @@ impl App {
 
     fn is_gpu_suitable(pdevice: &PhysicalDevice,
                        vk_instance: &ash::Instance,
-                       required_extensions: &[*const c_char],
                        surface_loader: &Surface,
                        surface: &SurfaceKHR) -> bool{
         let mut suitable = Self::find_suitable_queue_family(vk_instance, pdevice, surface_loader, surface).is_some();
 
-        // // I accidentally tested Vulkan Extensions against Device Extensions here.. Ignore so far
-        // suitable = suitable && unsafe {
-        //     let device_extension_props = vk_instance
-        //         .enumerate_device_extension_properties(*pdevice)
-        //         .expect("Failed to get device extension properties");
-        //     let extension_names: Vec<[c_char; 256]> = device_extension_props
-        //         .iter()
-        //         .map(|prop| prop.extension_name)
-        //         .collect();
-        //
-        //     required_extensions
-        //         .iter()
-        //         .all(|ext| extension_names
-        //             .iter()
-        //             .any(|ext2| unsafe {
-        //                 CStr::from_ptr(*ext) == CStr::from_ptr(ext2.as_ptr())
-        //             }))
-        // };
+        suitable = suitable && unsafe {
+            let device_extension_props = vk_instance
+                .enumerate_device_extension_properties(*pdevice)
+                .expect("Failed to get device extension properties");
+            let extension_names: Vec<[c_char; 256]> = device_extension_props
+                .iter()
+                .map(|prop| prop.extension_name)
+                .collect();
+
+            extension_names.iter().any(|ext|
+                CStr::from_ptr(ext.as_ptr()) == ash::extensions::khr::Swapchain::name())
+        };
 
         suitable
     }
 
     fn select_gpu(vk_instance: &ash::Instance,
-                  required_extensions: &Vec<*const c_char>,
                   surface_loader: &Surface,
                   surface: &SurfaceKHR) -> Result<PhysicalDevice, Box<dyn Error>> {
         let pdevices = unsafe {
@@ -185,7 +177,7 @@ impl App {
                 println!("[...] Found GPU: {:?}",
                          CStr::from_ptr(device_props.unwrap().device_name.as_ptr()));
             }
-            match Self::is_gpu_suitable(device, vk_instance, required_extensions, surface_loader, surface) {
+            match Self::is_gpu_suitable(device, vk_instance, surface_loader, surface) {
                 true => Some(device),
                 false => None,
             }
@@ -228,6 +220,65 @@ impl App {
         println!("[✔] Created Logical Device and Graphics Queue.");
 
         Ok((device, graphics_queue))
+    }
+
+    fn create_swapchain(vk_instance: &ash::Instance,
+                        physical_device: &PhysicalDevice,
+                        device: &ash::Device,
+                        surface_loader: &Surface,
+                        surface: &SurfaceKHR)
+        -> Result<(Swapchain, SwapchainKHR), Box<dyn Error>> {
+        let surface_capabilites = unsafe {
+            surface_loader
+                .get_physical_device_surface_capabilities(*physical_device, *surface)
+                .expect("Failed to query for surface capabilities")
+        };
+
+        let formats = unsafe {
+            surface_loader
+                .get_physical_device_surface_formats(*physical_device, *surface)
+                .expect("Failed to query for surface formats")
+        };
+
+        let present_modes = unsafe {
+            surface_loader
+                .get_physical_device_surface_present_modes(*physical_device, *surface)
+                .expect("Failed to query for surface present modes")
+        };
+
+        let surface_format = formats.iter()
+            .find(|f| f.format == vk::Format::B8G8R8A8_SRGB)
+            .cloned().unwrap();
+        let present_mode = present_modes.iter()
+            .find(|p| **p == vk::PresentModeKHR::MAILBOX)
+            .cloned().unwrap();
+        let extent = surface_capabilites.current_extent;
+
+        let image_count = surface_capabilites.min_image_count + 1;
+
+        let swapchain_create_info = vk::SwapchainCreateInfoKHR::builder()
+            .surface(*surface)
+            .min_image_count(image_count)
+            .image_format(surface_format.format)
+            .image_color_space(surface_format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .pre_transform(surface_capabilites.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(present_mode)
+            .clipped(true);
+
+        let swapchain_loader = Swapchain::new(vk_instance, device);
+        let swapchain = unsafe {
+            swapchain_loader.create_swapchain(&swapchain_create_info, None)
+                .expect("Failed to create Swapchain!")
+        };
+
+        println!("[✔] Swapchain created");
+
+        Ok((swapchain_loader, swapchain))
     }
 }
 
