@@ -25,8 +25,8 @@ impl App {
         let (vk_instance, required_extensions) = Self::create_vulkan_instance(app_name, &window, &entry)?;
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
-        let pdevice = Self::select_gpu(&vk_instance, &required_extensions)?;
-        let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, &pdevice)?;
+        let pdevice = Self::select_gpu(&vk_instance, &required_extensions, &surface_loader, &surface)?;
+        let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, &pdevice, &surface_loader, &surface)?;
         // Create a swap chain
         // Create image views
         // Setup framebuffers, command pools, and command buffers
@@ -120,20 +120,31 @@ impl App {
         Ok((surface, surface_loader))
     }
 
-    fn find_suitable_queue_family(vk_instance: &ash::Instance, pdevice: &PhysicalDevice) -> Option<usize> {
+    fn find_suitable_queue_family(vk_instance: &ash::Instance,
+                                  pdevice: &PhysicalDevice,
+                                  surface_loader: &Surface,
+                                  surface: &SurfaceKHR) -> Option<usize> {
         let queue_families = unsafe {
             vk_instance.get_physical_device_queue_family_properties(*pdevice)
         };
 
-        let mut suitable = queue_families.iter().enumerate().find_map(|(idx, info)| {
-            if info.queue_flags.contains(vk::QueueFlags::GRAPHICS) { Some(idx) } else { None }
+        let mut suitable = queue_families.iter().enumerate().find_map(|(idx, info)| unsafe {
+            if info.queue_flags.contains(vk::QueueFlags::GRAPHICS) &&
+                surface_loader
+                    .get_physical_device_surface_support(*pdevice, idx as u32, *surface)
+                    .unwrap()
+            { Some(idx) } else { None }
         });
 
         suitable
     }
 
-    fn is_gpu_suitable(pdevice: &PhysicalDevice, vk_instance: &ash::Instance, required_extensions: &[*const c_char]) -> bool{
-        let mut suitable = Self::find_suitable_queue_family(vk_instance, pdevice).is_some();
+    fn is_gpu_suitable(pdevice: &PhysicalDevice,
+                       vk_instance: &ash::Instance,
+                       required_extensions: &[*const c_char],
+                       surface_loader: &Surface,
+                       surface: &SurfaceKHR) -> bool{
+        let mut suitable = Self::find_suitable_queue_family(vk_instance, pdevice, surface_loader, surface).is_some();
 
         // // I accidentally tested Vulkan Extensions against Device Extensions here.. Ignore so far
         // suitable = suitable && unsafe {
@@ -157,7 +168,10 @@ impl App {
         suitable
     }
 
-    fn select_gpu(vk_instance: &ash::Instance, required_extensions: &Vec<*const c_char>) -> Result<PhysicalDevice, Box<dyn Error>> {
+    fn select_gpu(vk_instance: &ash::Instance,
+                  required_extensions: &Vec<*const c_char>,
+                  surface_loader: &Surface,
+                  surface: &SurfaceKHR) -> Result<PhysicalDevice, Box<dyn Error>> {
         let pdevices = unsafe {
             vk_instance
                 .enumerate_physical_devices()
@@ -171,7 +185,7 @@ impl App {
                 println!("[...] Found GPU: {:?}",
                          CStr::from_ptr(device_props.unwrap().device_name.as_ptr()));
             }
-            match Self::is_gpu_suitable(device, vk_instance, required_extensions) {
+            match Self::is_gpu_suitable(device, vk_instance, required_extensions, surface_loader, surface) {
                 true => Some(device),
                 false => None,
             }
@@ -183,8 +197,12 @@ impl App {
 
         Ok(*pdevice)
     }
-    fn create_logical_device_and_queues(vk_instance: &ash::Instance, pdevice: &PhysicalDevice) -> Result<(ash::Device, vk::Queue), Box<dyn Error>> {
-        let queue_family_index = Self::find_suitable_queue_family(vk_instance, pdevice)
+    fn create_logical_device_and_queues(vk_instance: &ash::Instance,
+                                        pdevice: &PhysicalDevice,
+                                        surface_loader: &Surface,
+                                        surface: &SurfaceKHR)
+            -> Result<(ash::Device, vk::Queue), Box<dyn Error>> {
+        let queue_family_index = Self::find_suitable_queue_family(vk_instance, pdevice, surface_loader, surface)
             .expect("No suitable queue family found") as u32;
         let queue_priorities = [1.0_f32];
 
