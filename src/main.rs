@@ -7,7 +7,7 @@ use crate::app::App;
 fn main() {
     let app = match App::new("Funky App", 800, 600) {
         Err(e) => { eprintln!("{}", e); exit(1); },
-        _ => (),
+        Ok(app) => app,
     };
     std::thread::sleep(Duration::from_secs(10));
     drop(app);
