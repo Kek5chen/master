@@ -44,7 +44,8 @@ impl App {
 
     fn initialize_vulkan() -> Result<ash::Entry, Box<dyn Error>> {
         unsafe {
-            let entry = ash::Entry::load()?;
+            let entry = ash::Entry::load()
+                .map_err(|_| "Vulkan could not be loaded on this device. The library was not found.")?;
 
             Ok(entry)
         }
