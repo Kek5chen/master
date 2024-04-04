@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
+use std::mem::swap;
 use ash::extensions::khr::{Surface, Swapchain};
 use ash::{vk};
 use ash::vk::{InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR, SwapchainKHR};
@@ -204,10 +205,12 @@ impl App {
 
         let physical_device_features = vk::PhysicalDeviceFeatures::builder();
 
+        let swapchain_extension = CString::new("VK_KHR_swapchain").unwrap();
+        let device_extensions = [swapchain_extension.as_ptr()];
         let device_create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(std::slice::from_ref(&queue_create_info))
             .enabled_features(&physical_device_features)
-            .enabled_extension_names(&[]);
+            .enabled_extension_names(&device_extensions);
 
         let device: ash::Device = unsafe {
             vk_instance
