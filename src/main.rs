@@ -73,7 +73,7 @@ fn send_info(item: &FortniteItem, mail_to: &str) -> Result<(), String> {
         Err(_) => return Err(format!("The Email Address <{}> was invalid", &item.name))
     };
     let mail = Message::builder()
-        .from("Fortnite Item Shop Notifier <notifier@imkx.dev>".parse().unwrap())
+        .from("Fortnite Item Shop Notifier <notifier@fortifier.imkx.dev>".parse().unwrap())
         .to(mail_recv)
         .subject(format!("{} is now available in Fornite!", item.name))
         .header(ContentType::TEXT_PLAIN)
