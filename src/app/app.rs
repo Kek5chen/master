@@ -1,16 +1,17 @@
 use std::error::Error;
 use std::ffi::{c_char, CStr, CString};
-use std::mem::swap;
 use ash::extensions::khr::{Surface, Swapchain};
-use ash::{vk};
-use ash::vk::{ImageViewCreateInfo, InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR, SwapchainKHR};
+use ash::prelude::VkResult;
+use ash::{Device, vk};
+use ash::vk::{Extent2D, Image, ImageView, ImageViewCreateInfo, InstanceCreateFlags, PhysicalDevice, PhysicalDeviceProperties, SurfaceKHR, SwapchainKHR};
 use ash_window::enumerate_required_extensions;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
 pub struct App {
-    event_loop: EventLoop<()>,
+    event_loop: Option<EventLoop<()>>,
     window: winit::window::Window,
     entry: ash::Entry,
     vk_instance: ash::Instance,
@@ -27,15 +28,21 @@ impl App {
         // Create a debug messenger (optional)
         let (surface, surface_loader) = Self::create_vulkan_surface(&entry, &vk_instance, &window)?;
         let pdevice = Self::select_gpu(&vk_instance, &surface_loader, &surface)?;
-        let (ldevice, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, &pdevice, &surface_loader, &surface)?;
+        let (ldevice, queue_family_index, graphics_queue) = Self::create_logical_device_and_queues(&vk_instance, &pdevice, &surface_loader, &surface)?;
         let (swapchain_loader, swapchain) = Self::create_swapchain(&vk_instance, &pdevice, &ldevice, &surface_loader, &surface)?;
         let image_views = Self::create_image_views(&ldevice, &swapchain_loader, swapchain);
-        // Create image views
-        // Setup framebuffers, command pools, and command buffers
+        let render_pass = Self::create_render_pass(&ldevice, vk::Format::R8G8B8A8_SRGB)?;
+        let framebuffers = Self::create_framebuffers(&ldevice, &image_views, &render_pass, &window)?;
+
+        // Command pool and command buffers setup
+        let command_pool = Self::create_command_pool(&ldevice, queue_family_index)?;
+        let command_buffers = Self::create_command_buffers(&ldevice, &command_pool, &framebuffers, &render_pass, &window);
+
         // Initialize synchronization primitives
+        let (image_available_semaphores, render_finished_semaphores, in_flight_fences) = Self::create_sync_objects(&ldevice)?;
 
         Ok(App {
-            event_loop,
+            event_loop: Some(event_loop),
             window,
             entry,
             vk_instance,
@@ -53,10 +60,10 @@ impl App {
         }
     }
 
-    const ENGINE_NAME: &'static[u8] = b"Silly Engine\0";
+    const ENGINE_NAME: &'static [u8] = b"Silly Engine\0";
 
     fn create_vulkan_instance(app_name: &str, window: &winit::window::Window, entry: &ash::Entry)
-        -> Result<ash::Instance, Box<dyn Error>> {
+                              -> Result<ash::Instance, Box<dyn Error>> {
         let app_name: CString = CString::new(app_name)?;
 
         let app_info = vk::ApplicationInfo::builder()
@@ -106,7 +113,7 @@ impl App {
     fn create_vulkan_surface(entry: &ash::Entry,
                              vk_instance: &ash::Instance,
                              window: &winit::window::Window)
-        -> Result<(SurfaceKHR, Surface), Box<dyn Error>> {
+                             -> Result<(SurfaceKHR, Surface), Box<dyn Error>> {
         let surface = unsafe {
             ash_window::create_surface(entry,
                                        vk_instance,
@@ -144,7 +151,7 @@ impl App {
     fn is_gpu_suitable(pdevice: &PhysicalDevice,
                        vk_instance: &ash::Instance,
                        surface_loader: &Surface,
-                       surface: &SurfaceKHR) -> bool{
+                       surface: &SurfaceKHR) -> bool {
         let mut suitable = Self::find_suitable_queue_family(vk_instance, pdevice, surface_loader, surface).is_some();
 
         suitable = suitable && unsafe {
@@ -195,7 +202,7 @@ impl App {
                                         pdevice: &PhysicalDevice,
                                         surface_loader: &Surface,
                                         surface: &SurfaceKHR)
-            -> Result<(ash::Device, vk::Queue), Box<dyn Error>> {
+                                        -> Result<(ash::Device, u32, vk::Queue), Box<dyn Error>> {
         let queue_family_index = Self::find_suitable_queue_family(vk_instance, pdevice, surface_loader, surface)
             .expect("No suitable queue family found") as u32;
         let queue_priorities = [1.0_f32];
@@ -223,7 +230,7 @@ impl App {
 
         println!("[✔] Created Logical Device and Graphics Queue.");
 
-        Ok((device, graphics_queue))
+        Ok((device, queue_family_index, graphics_queue))
     }
 
     fn create_swapchain(vk_instance: &ash::Instance,
@@ -231,7 +238,7 @@ impl App {
                         device: &ash::Device,
                         surface_loader: &Surface,
                         surface: &SurfaceKHR)
-        -> Result<(Swapchain, SwapchainKHR), Box<dyn Error>> {
+                        -> Result<(Swapchain, SwapchainKHR), Box<dyn Error>> {
         let surface_capabilites = unsafe {
             surface_loader
                 .get_physical_device_surface_capabilities(*physical_device, *surface)
@@ -252,10 +259,10 @@ impl App {
 
         let surface_format = formats.iter()
             .find(|f| f.format == vk::Format::B8G8R8A8_SRGB)
-            .cloned().unwrap();
+            .cloned().expect("Failed to find Surface Format in Physics Device");
         let present_mode = present_modes.iter()
-            .find(|p| **p == vk::PresentModeKHR::MAILBOX)
-            .cloned().unwrap();
+            .find(|p| **p == vk::PresentModeKHR::FIFO)
+            .cloned().expect("Failed to find FIFO Present Mode in Physical Device");
         let extent = surface_capabilites.current_extent;
 
         let image_count = surface_capabilites.min_image_count + 1;
@@ -285,42 +292,266 @@ impl App {
         Ok((swapchain_loader, swapchain))
     }
 
+    fn create_image_view(device: &ash::Device, img: Image) -> ImageView {
+        let create_info = ImageViewCreateInfo::builder()
+            .image(img)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(vk::Format::B8G8R8A8_SRGB)
+            .components(vk::ComponentMapping::default())
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+
+        let image_view = unsafe {
+            device
+                .create_image_view(&create_info, None)
+                .expect("Failed to create image view.")
+        };
+
+        println!("[✔] Image View created");
+
+        image_view
+    }
+
     fn create_image_views(device: &ash::Device, swapchain: &Swapchain, swapchain_khr: SwapchainKHR)
-        -> Vec<vk::ImageView> {
+                          -> Vec<ImageView> {
         let swp_images = unsafe {
             swapchain.get_swapchain_images(swapchain_khr)
-            .expect("Couldn't get Swapchain Images.")
+                .expect("Couldn't get Swapchain Images.")
         };
-        let image_views: Vec<vk::ImageView> = swp_images.iter().map(|&img| {
-            let create_info = ImageViewCreateInfo::builder()
-                .image(img)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::B8G8R8A8_SRGB)
-                .components(vk::ComponentMapping::default())
-                .subresource_range(vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1
-                });
+        let image_views: Vec<ImageView> = swp_images.iter().map(
+            |&img| Self::create_image_view(device, img)
+        ).collect();
 
-            let image_view = unsafe {
-                device
-                    .create_image_view(&create_info, None)
-                    .expect("Failed to create image view.")
-            };
-
-            println!("[✔] Image View created");
-
-            image_view
-        }).collect();
+        assert_eq!(image_views.len(), 3, "[x] 3 Image Views could not be created");
 
         println!("[✔] {} Image View{} created",
                  image_views.len(),
-                 if image_views.len() > 1 {"s"} else {""} );
+                 if image_views.len() > 1 { "s" } else { "" });
 
         image_views
+    }
+
+    fn create_framebuffers(
+        device: &ash::Device,
+        image_views: &[vk::ImageView],
+        render_pass: &vk::RenderPass,
+        window: &winit::window::Window,
+    ) -> VkResult<Vec<vk::Framebuffer>> {
+        let mut framebuffers = vec![];
+
+        for &image_view in image_views {
+            let framebuffer_info = vk::FramebufferCreateInfo {
+                s_type: vk::StructureType::FRAMEBUFFER_CREATE_INFO,
+                render_pass: *render_pass,
+                attachment_count: 1,
+                p_attachments: &image_view,
+                width: window.inner_size().width,  // Define these according to your swapchain setup
+                height: window.inner_size().height,
+                layers: 1,
+                ..Default::default()
+            };
+
+            let framebuffer = unsafe {
+                device.create_framebuffer(&framebuffer_info, None)?
+            };
+            framebuffers.push(framebuffer);
+        }
+
+        println!("[✔] Created Framebuffers");
+        Ok(framebuffers)
+    }
+
+    fn create_command_pool(
+        device: &ash::Device,
+        queue_family_index: u32,
+    ) -> VkResult<vk::CommandPool> {
+        let pool_info = vk::CommandPoolCreateInfo {
+            s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
+            queue_family_index,
+            flags: vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
+            ..Default::default()
+        };
+
+        let command_pool = unsafe {
+            device.create_command_pool(&pool_info, None)?
+        };
+
+        println!("[✔] Created Command Pool");
+
+        Ok(command_pool)
+    }
+
+    fn create_command_buffers(
+        device: &ash::Device,
+        command_pool: &vk::CommandPool,
+        framebuffers: &[vk::Framebuffer],
+        render_pass: &vk::RenderPass,
+        window: &winit::window::Window,
+    ) -> VkResult<Vec<vk::CommandBuffer>> {
+        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo {
+            s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
+            command_pool: *command_pool,
+            level: vk::CommandBufferLevel::PRIMARY,
+            command_buffer_count: framebuffers.len() as u32,
+            ..Default::default()
+        };
+
+        let command_buffers = unsafe {
+            device.allocate_command_buffers(&command_buffer_allocate_info)?
+        };
+
+        for (i, &command_buffer) in command_buffers.iter().enumerate() {
+            let command_buffer_begin_info = vk::CommandBufferBeginInfo {
+                s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+                flags: vk::CommandBufferUsageFlags::SIMULTANEOUS_USE,
+                ..Default::default()
+            };
+
+            unsafe {
+                device.begin_command_buffer(command_buffer, &command_buffer_begin_info)?;
+                let render_pass_begin_info = vk::RenderPassBeginInfo {
+                    s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
+                    render_pass: *render_pass,
+                    framebuffer: framebuffers[i],
+                    render_area: vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: Extent2D { height: window.inner_size().height, width: window.inner_size().width },  // This should match the swapchain image extent
+                    },
+                    clear_value_count: 1,
+                    p_clear_values: &vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    },
+                    ..Default::default()
+                };
+                device.cmd_begin_render_pass(command_buffer, &render_pass_begin_info, vk::SubpassContents::INLINE);
+                // Add drawing commands here
+                device.cmd_end_render_pass(command_buffer);
+                device.end_command_buffer(command_buffer)?;
+            }
+        }
+
+        println!("[✔] Created Command Buffer");
+
+        Ok(command_buffers)
+    }
+    fn create_sync_objects(device: &Device) -> VkResult<(Vec<vk::Semaphore>, Vec<vk::Semaphore>, Vec<vk::Fence>)> {
+        const MAX_FRAMES_IN_FLIGHT: usize = 3;
+        let mut image_available_semaphores = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
+        let mut render_finished_semaphores = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
+        let mut in_flight_fences = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
+
+        let semaphore_info = vk::SemaphoreCreateInfo {
+            s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
+            ..Default::default()
+        };
+
+        let fence_info = vk::FenceCreateInfo {
+            s_type: vk::StructureType::FENCE_CREATE_INFO,
+            flags: vk::FenceCreateFlags::SIGNALED,  // Start all fences in the signaled state to ensure that the first `wait_for_fences` call doesn't hang
+            ..Default::default()
+        };
+
+        for _ in 0..MAX_FRAMES_IN_FLIGHT {
+            let image_available_semaphore = unsafe {
+                device.create_semaphore(&semaphore_info, None)?
+            };
+            let render_finished_semaphore = unsafe {
+                device.create_semaphore(&semaphore_info, None)?
+            };
+            let in_flight_fence = unsafe {
+                device.create_fence(&fence_info, None)?
+            };
+
+            image_available_semaphores.push(image_available_semaphore);
+            render_finished_semaphores.push(render_finished_semaphore);
+            in_flight_fences.push(in_flight_fence);
+        }
+
+        println!("[✔] Created Sync Objects");
+
+        Ok((image_available_semaphores, render_finished_semaphores, in_flight_fences))
+    }
+
+    fn create_render_pass(device: &ash::Device, surface_format: vk::Format) -> Result<vk::RenderPass, Box<dyn Error>> {
+        let color_attachment = vk::AttachmentDescription {
+            format: surface_format,
+            samples: vk::SampleCountFlags::TYPE_1,
+            load_op: vk::AttachmentLoadOp::CLEAR,
+            store_op: vk::AttachmentStoreOp::STORE,
+            stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
+            stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+            ..Default::default()
+        };
+
+        let color_attachment_ref = vk::AttachmentReference {
+            attachment: 0,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        };
+
+        let subpass = vk::SubpassDescription {
+            pipeline_bind_point: vk::PipelineBindPoint::GRAPHICS,
+            color_attachment_count: 1,
+            p_color_attachments: &color_attachment_ref,
+            ..Default::default()
+        };
+
+        let dependency = vk::SubpassDependency {
+            src_subpass: vk::SUBPASS_EXTERNAL,
+            dst_subpass: 0,
+            src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            src_access_mask: vk::AccessFlags::empty(),
+            dst_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            dst_access_mask: vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            ..Default::default()
+        };
+
+        let attachments = [color_attachment];
+        let subpasses = [subpass];
+        let dependencies = [dependency];
+
+        let render_pass_info = vk::RenderPassCreateInfo {
+            s_type: vk::StructureType::RENDER_PASS_CREATE_INFO,
+            attachment_count: attachments.len() as u32,
+            p_attachments: attachments.as_ptr(),
+            subpass_count: subpasses.len() as u32,
+            p_subpasses: subpasses.as_ptr(),
+            dependency_count: dependencies.len() as u32,
+            p_dependencies: dependencies.as_ptr(),
+            ..Default::default()
+        };
+
+        let render_pass = unsafe {
+            device.create_render_pass(&render_pass_info, None)?
+        };
+
+        println!("[✔] Created Render Pass");
+
+        Ok(render_pass)
+    }
+
+    pub fn run(mut self) {
+        let event_loop = self.event_loop.take().expect("Event loop should be present.");
+
+        event_loop.run(|event, window_target| {
+            match event {
+                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                    window_target.exit()
+                }
+                Event::DeviceEvent { event, device_id } => {
+                    
+                }
+                _ => ()
+            }
+        }).unwrap()
     }
 }
 
