@@ -3,6 +3,7 @@ use std::str::Split;
 use std::path::PathBuf;
 
 #[derive(Debug)]
+#[allow(unused)]
 struct UserEntry {
     user: String,
     pass: Option<String>,
