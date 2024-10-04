@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         entry_collector.push(entry);
     }
 
-    println!("All users: {:?}", entry_collector.iter().map(|entry| entry.user.clone()).collect::<Vec<String>>().join(", "));
+    println!("All users: {}", entry_collector.iter().map(|entry| entry.user.clone()).collect::<Vec<String>>().join(", "));
 
     Ok(())
 }
